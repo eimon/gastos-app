@@ -94,7 +94,7 @@ export default function ResumenScreen() {
     const gastosArray = Array.isArray(gastosData) ? gastosData : []
     const pagosArray = Array.isArray(pagosData) ? pagosData : []
     
-    const totalGastos = gastosArray.reduce((sum, gasto) => sum + (gasto.monto_total || 0), 0)
+    const totalGastos = gastosArray.reduce((sum, gasto) => sum + (gasto.monto || 0), 0)
     
     // Calcular total pagado basado en la columna 'pagado'
     const totalPagado = gastosArray.reduce((sum, gasto) => {
@@ -113,11 +113,11 @@ export default function ResumenScreen() {
 
     const pagosPorMedio = {
       efectivo: pagosArray
-        .filter(p => p.medio_pago === 'Efectivo')
-        .reduce((sum, p) => sum + p.monto, 0),
+        .filter(p => p.medio_pago === 'efectivo')
+        .reduce((sum, p) => sum + (p.monto || 0), 0),
       transferencia: pagosArray
-        .filter(p => p.medio_pago === 'Transferencia')
-        .reduce((sum, p) => sum + p.monto, 0)
+        .filter(p => p.medio_pago === 'transferencia')
+        .reduce((sum, p) => sum + (p.monto || 0), 0)
     }
 
     // Gastos por mes (últimos 6 meses)
@@ -134,7 +134,7 @@ export default function ResumenScreen() {
       const fechaGasto = new Date(gasto.created_at)
       const mesKey = fechaGasto.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })
       if (gastosPorMes.hasOwnProperty(mesKey)) {
-        gastosPorMes[mesKey] += (gasto.monto_total || 0)
+        gastosPorMes[mesKey] += (gasto.monto || 0)
       }
     })
 
@@ -150,6 +150,10 @@ export default function ResumenScreen() {
   }
 
   const formatearMonto = (monto: number) => {
+    // Verificar si el monto es válido
+    if (isNaN(monto) || monto === null || monto === undefined) {
+      return '$0,00'
+    }
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
       currency: 'ARS'
@@ -315,7 +319,7 @@ export default function ResumenScreen() {
                 </View>
                 <View style={styles.itemRecenteMonto}>
                   <Text style={styles.itemRecenteMontoText}>
-                    {formatearMonto(gasto.monto_total)}
+                    {formatearMonto(gasto.monto)}
                   </Text>
                   <Chip
                     style={[
@@ -360,14 +364,14 @@ export default function ResumenScreen() {
                   <Chip
                     style={[
                       styles.itemRecenteChip,
-                      { backgroundColor: pago.medio_pago === 'Efectivo' ? '#E8F5E8' : '#E3F2FD' }
+                      { backgroundColor: pago.medio_pago === 'efectivo' ? '#E8F5E8' : '#E3F2FD' }
                     ]}
                     textStyle={[
                       styles.itemRecenteChipText,
-                      { color: pago.medio_pago === 'Efectivo' ? '#4CAF50' : '#2196F3' }
+                      { color: pago.medio_pago === 'efectivo' ? '#4CAF50' : '#2196F3' }
                     ]}
                   >
-                    {pago.medio_pago}
+                    {pago.medio_pago === 'efectivo' ? 'Efectivo' : pago.medio_pago === 'transferencia' ? 'Transferencia' : pago.medio_pago}
                   </Chip>
                 </View>
               </View>

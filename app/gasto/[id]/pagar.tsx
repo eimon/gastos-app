@@ -194,32 +194,74 @@ export default function PagarGastoScreen() {
           {detallesPendientes.length === 0 ? (
             <Text style={styles.noDataText}>No hay pagos pendientes</Text>
           ) : (
-            detallesPendientes.map((detalle, index) => {
-              const montoRestante = getMontoRestante(detalle)
-              const isSelected = detalleSeleccionado?.id === detalle.id
-              
-              return (
-                <View key={detalle.id}>
-                  <List.Item
-                    title={`${detalle.usuario?.nickname || 'Participante'} - Cuota ${detalle.numero_cuota}`}
-                    description={`Restante: ${formatearMonto(montoRestante)}${detalle.vencimiento ? ` • Vence: ${new Date(detalle.vencimiento).toLocaleDateString('es-AR')}` : ''}`}
-                    left={() => (
-                      <RadioButton
-                        value={detalle.id}
-                        status={isSelected ? 'checked' : 'unchecked'}
-                        onPress={() => seleccionarDetalle(detalle)}
-                      />
+            (() => {
+              // Agrupar detalles por cuota
+              const detallesPorCuota = detallesPendientes.reduce((acc, detalle) => {
+                const cuota = detalle.numero_cuota
+                if (!acc[cuota]) {
+                  acc[cuota] = []
+                }
+                acc[cuota].push(detalle)
+                return acc
+              }, {} as Record<number, typeof detallesPendientes>)
+
+              // Ordenar las cuotas
+              const cuotasOrdenadas = Object.keys(detallesPorCuota)
+                .map(Number)
+                .sort((a, b) => a - b)
+
+              return cuotasOrdenadas.map((numeroCuota, cuotaIndex) => {
+                const detallesCuota = detallesPorCuota[numeroCuota]
+                const fechaVencimiento = detallesCuota[0]?.vencimiento
+                
+                return (
+                  <View key={`cuota-${numeroCuota}`}>
+                    {/* Header de la cuota */}
+                    <View style={styles.cuotaHeader}>
+                      <Text style={styles.cuotaTitle}>Cuota {numeroCuota}</Text>
+                      {fechaVencimiento && (
+                        <Text style={styles.cuotaVencimiento}>
+                          Vence: {new Date(fechaVencimiento).toLocaleDateString('es-AR')}
+                        </Text>
+                      )}
+                    </View>
+                    
+                    {/* Participantes de la cuota */}
+                    {detallesCuota.map((detalle, detalleIndex) => {
+                      const montoRestante = getMontoRestante(detalle)
+                      const isSelected = detalleSeleccionado?.id === detalle.id
+                      
+                      return (
+                        <View key={detalle.id}>
+                          <List.Item
+                            title={detalle.usuario?.nickname || detalle.nombre_participante || 'Participante'}
+                            description={`Restante: ${formatearMonto(montoRestante)}`}
+                            left={() => (
+                              <RadioButton
+                                value={detalle.id}
+                                status={isSelected ? 'checked' : 'unchecked'}
+                                onPress={() => seleccionarDetalle(detalle)}
+                              />
+                            )}
+                            onPress={() => seleccionarDetalle(detalle)}
+                            style={[
+                              styles.detalleItem,
+                              isSelected && styles.detalleItemSelected
+                            ]}
+                          />
+                          {detalleIndex < detallesCuota.length - 1 && <Divider style={styles.participanteDivider} />}
+                        </View>
+                      )
+                    })}
+                    
+                    {/* Separador entre cuotas */}
+                    {cuotaIndex < cuotasOrdenadas.length - 1 && (
+                      <Divider style={styles.cuotaDivider} />
                     )}
-                    onPress={() => seleccionarDetalle(detalle)}
-                    style={[
-                      styles.detalleItem,
-                      isSelected && styles.detalleItemSelected
-                    ]}
-                  />
-                  {index < detallesPendientes.length - 1 && <Divider />}
-                </View>
-              )
-            })
+                  </View>
+                )
+              })
+            })()
           )}
         </Card.Content>
       </Card>
@@ -364,6 +406,34 @@ const styles = StyleSheet.create({
   },
   detalleItemSelected: {
     backgroundColor: '#e3f2fd',
+  },
+  cuotaHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f9fa',
+    marginVertical: 8,
+    borderRadius: 8,
+  },
+  cuotaTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  cuotaVencimiento: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  participanteDivider: {
+    marginVertical: 4,
+  },
+  cuotaDivider: {
+    marginVertical: 16,
+    height: 2,
+    backgroundColor: '#e0e0e0',
   },
   input: {
     marginBottom: 16,

@@ -161,7 +161,7 @@ export default function PagosScreen() {
                 {gasto?.descripcion || 'Sin descripción'}
               </Title>
               <Paragraph style={styles.participanteText}>
-                Pagado por: {participante?.nickname || 'Desconocido'}
+                Pagado por: {participante?.nickname || gastoDetalle?.nombre_participante || 'Desconocido'}
               </Paragraph>
               <View style={styles.pagoMeta}>
                 <Chip

@@ -50,7 +50,8 @@ export interface Gasto {
 export interface GastoDetalle {
   id: string
   gasto_id: string
-  usuario_id: string  // Referencia directa a usuarios
+  usuario_id?: string  // Referencia directa a usuarios (opcional para no registrados)
+  nombre_participante?: string  // Nombre para participantes no registrados
   monto: number
   pagado: boolean
   vencimiento?: string
@@ -163,9 +164,10 @@ export function calcularMontosConDescuento(
 }
 
 export const gastosService = {
-  // Obtener gastos del usuario
+  // Obtener gastos del usuario (propios y compartidos)
   async obtenerGastos(userId: string) {
-    const { data, error } = await supabase
+    // Obtener gastos propios (creados por el usuario)
+    const { data: gastosPropio, error: errorPropio } = await supabase
       .from('gastos')
       .select(`
         *,
@@ -178,8 +180,35 @@ export const gastosService = {
       .eq('usuario_id', userId)
       .order('created_at', { ascending: false })
     
-    if (error) throw error
-    return data as Gasto[]
+    if (errorPropio) throw errorPropio
+
+    // Obtener gastos compartidos donde el usuario participa (pero no es el creador)
+    const { data: gastosCompartidos, error: errorCompartidos } = await supabase
+      .from('gastos')
+      .select(`
+        *,
+        detalles:gastos_detalle(
+          *,
+          usuario:usuarios(nickname, email),
+          pagos(*)
+        )
+      `)
+      .neq('usuario_id', userId)
+      .eq('detalles.usuario_id', userId)
+      .order('created_at', { ascending: false })
+    
+    if (errorCompartidos) throw errorCompartidos
+
+    // Combinar ambos arrays y eliminar duplicados
+    const todosLosGastos = [...(gastosPropio || []), ...(gastosCompartidos || [])]
+    const gastosUnicos = todosLosGastos.filter((gasto, index, self) => 
+      index === self.findIndex(g => g.id === gasto.id)
+    )
+
+    // Ordenar por fecha de creación descendente
+    gastosUnicos.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    
+    return gastosUnicos as Gasto[]
   },
 
   // Crear gasto
@@ -276,14 +305,15 @@ export const pagosService = {
         *,
         gasto_detalle:gastos_detalle(
           *,
-          gasto:gastos!inner(
+          usuario:usuarios(nickname, email),
+          gasto:gastos(
             id,
             descripcion,
             usuario_id
           )
         )
       `)
-      .eq('gasto_detalle.gasto.usuario_id', userId)
+      .eq('gasto_detalle.usuario_id', userId)
       .order('created_at', { ascending: false })
     
     if (error) throw error

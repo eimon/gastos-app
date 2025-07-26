@@ -20,7 +20,6 @@ import {
   Divider,
   List,
   Badge,
-  Modal,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
@@ -32,14 +31,7 @@ export default function GastoDetalleScreen() {
   const [gasto, setGasto] = useState<Gasto | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [procesandoPagoParticipante, setProcesandoPagoParticipante] = useState<string | null>(null)
 
-  const [modalSeleccionAcreedor, setModalSeleccionAcreedor] = useState<{
-    visible: boolean;
-    participanteId: string;
-    acreedores: Array<{participanteId: string; nickname: string; balance: number; detalleId: string}>;
-    montoAdeudado: number;
-  }>({ visible: false, participanteId: '', acreedores: [], montoAdeudado: 0 })
 
   useEffect(() => {
     if (id) {
@@ -168,7 +160,7 @@ export default function GastoDetalleScreen() {
       
       return {
         participanteId: detalle.usuario?.id || '',
-        nickname: detalle.usuario?.nickname || 'Participante',
+        nickname: detalle.usuario?.nickname || detalle.nombre_participante || 'Participante',
         balance: Math.round(balance * 100) / 100
       }
     }).filter(b => Math.abs(b.balance) > 0.01) // Solo incluir balances significativos
@@ -210,154 +202,7 @@ export default function GastoDetalleScreen() {
     return deudas
   }
   
-  // Función para abrir el modal de selección de acreedor
-  const abrirModalSeleccionAcreedor = async (participanteId: string) => {
-    if (!gasto || !id) return
-    
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Usuario no autenticado')
-      
-      // Verificar que el usuario es el creador del gasto
-      if (gasto.usuario_id !== user.id) {
-        throw new Error('Solo el creador del gasto puede asignar pagos')
-      }
-      
-      // Obtener detalles actualizados del gasto
-      const { data: gastoActualizado, error: gastoError } = await supabase
-        .from('gastos')
-        .select(`
-          *,
-          detalles:gastos_detalle(
-            *,
-            usuario:usuarios(*)
-          )
-        `)
-        .eq('id', id)
-        .single()
-      
-      if (gastoError) throw gastoError
-      
-      // Calcular balances netos con datos actualizados
-      const detallesArray = Array.isArray(gastoActualizado.detalles) ? gastoActualizado.detalles : []
-      const balances = detallesArray.map(detalle => {
-        const saldoPagado = getSaldoPagado(detalle)
-        const montoTotal = detalle.monto
-        // Para gastos compartidos: balance = monto - saldo
-        // - Si balance > 0: debe dinero (monto > saldo)
-        // - Si balance < 0: le deben dinero (saldo > monto)
-        const balance = montoTotal - saldoPagado
-        
-        return {
-          participanteId: detalle.usuario?.id || '',
-          nickname: detalle.usuario?.nickname || 'Participante',
-          balance: Math.round(balance * 100) / 100,
-          detalleId: detalle.id
-        }
-      }).filter(b => Math.abs(b.balance) > 0.01)
-      
-      const participante = balances.find(b => b.participanteId === participanteId)
-      
-      if (!participante || participante.balance <= 0) {
-        showAlert('Información', 'Este participante no tiene deudas pendientes')
-        return
-      }
-      
-      const montoAdeudado = participante.balance
-      const acreedores = balances
-        .filter(b => b.balance < 0)
-        .map(b => ({ ...b, balance: Math.abs(b.balance) }))
-        .sort((a, b) => b.balance - a.balance)
-      
-      if (acreedores.length === 0) {
-        showAlert('Información', 'No hay participantes a quienes pagar en este momento')
-        return
-      }
-      
-      // Abrir modal con la información
-      setModalSeleccionAcreedor({
-        visible: true,
-        participanteId,
-        acreedores,
-        montoAdeudado
-      })
-      
-    } catch (error: any) {
-      console.error('Error al abrir modal:', error)
-      showAlert('Error', error.message || 'No se pudo cargar la información')
-    }
-  }
-  
-  // Función para realizar el pago a un acreedor específico
-  const pagarAcreedorEspecifico = async (acreedorId: string) => {
-    const { participanteId, acreedores, montoAdeudado } = modalSeleccionAcreedor
-    const acreedor = acreedores.find(a => a.participanteId === acreedorId)
-    
-    if (!acreedor) return
-    
-    setProcesandoPagoParticipante(participanteId)
-    
-    try {
-      const participante = acreedores.find(a => a.participanteId === participanteId) || 
-                          { nickname: 'Participante' }
-      
-      // Calcular el monto a pagar (mínimo entre lo que debe y lo que le deben al acreedor)
-      const montoPago = Math.min(montoAdeudado, acreedor.balance)
-      
-      if (montoPago <= 0.01) {
-        showAlert('Error', 'No hay monto válido para pagar')
-        return
-      }
-      
-      // Buscar el detalle del participante que está pagando
-      const detallesPagador = gasto?.detalles?.find(d => d.usuario?.id === participanteId)
-      if (!detallesPagador) {
-        showAlert('Error', 'No se encontró el detalle del participante pagador')
-        return
-      }
-      
-      // Crear el pago
-      const { error: pagoError } = await supabase
-        .from('pagos')
-        .insert({
-          gasto_detalle_id: acreedor.detalleId,
-          monto: Math.round(montoPago * 100) / 100,
-          medio_pago: 'transferencia',
-          fecha_pago: new Date().toISOString().split('T')[0],
-          descripcion: `Pago: ${participante.nickname} → ${acreedor.nickname}`
-        })
-      
-      if (pagoError) throw pagoError
-      
-      // Los saldos se actualizan automáticamente por triggers de la base de datos
-      // No necesitamos actualizar manualmente
-      
-      showAlert(
-        'Pago Realizado', 
-        `Pago de ${formatearMonto(montoPago)} registrado exitosamente`
-      )
-      
-      // Cerrar modal
-      setModalSeleccionAcreedor({ visible: false, participanteId: '', acreedores: [], montoAdeudado: 0 })
-      
-      // Recargar datos
-      await cargarGastoDetalle()
-      
-      // Si aún hay deuda pendiente, volver a abrir el modal
-      const deudaRestante = montoAdeudado - montoPago
-      if (deudaRestante > 0.01) {
-        setTimeout(() => {
-          abrirModalSeleccionAcreedor(participanteId)
-        }, 500)
-      }
-      
-    } catch (error: any) {
-      console.error('Error en pago específico:', error)
-      showAlert('Error', error.message || 'No se pudo procesar el pago')
-    } finally {
-      setProcesandoPagoParticipante(null)
-    }
-  }
+
   
 
 
@@ -519,12 +364,12 @@ export default function GastoDetalleScreen() {
                   return (
                     <View key={detalle.id} style={styles.detalleItem}>
                       <List.Item
-                        title={detalle.usuario?.nickname || 'Participante'}
+                        title={detalle.usuario?.nickname || detalle.nombre_participante || 'Participante'}
                         description={`${formatearMonto(detalle.monto)} - ${formatearMonto(getSaldoPagado(detalle))} pagado`}
                         left={() => (
                           <View style={styles.participanteIcon}>
                             <Ionicons 
-                              name="account" 
+                              name="people-outline" 
                               size={20} 
                               color="#666" 
                             />
@@ -556,22 +401,7 @@ export default function GastoDetalleScreen() {
                         </View>
                       )}
                       
-                      {/* Botón de pago individual para el creador del gasto */}
-                      {gasto.tipo === 'compartido' && montoPendiente > 0 && !esCreador && (
-                        <View style={styles.botonPagoContainer}>
-                          <Button
-                            mode="outlined"
-                            onPress={() => abrirModalSeleccionAcreedor(detalle.usuario?.id || '')}
-                            icon="credit-card"
-                            disabled={procesandoPagoParticipante === detalle.usuario?.id}
-                            loading={procesandoPagoParticipante === detalle.usuario?.id}
-                            style={styles.botonPagoParticipante}
-                            compact
-                          >
-                            Pagar {formatearMonto(montoPendiente)}
-                          </Button>
-                        </View>
-                      )}
+
                       
                       {detalle.vencimiento && (
                         <Text style={styles.vencimientoText}>
@@ -612,58 +442,7 @@ export default function GastoDetalleScreen() {
         
 
          
-         {/* Modal de Selección de Acreedor */}
-         <Modal
-           visible={modalSeleccionAcreedor.visible}
-           onDismiss={() => setModalSeleccionAcreedor({ visible: false, participanteId: '', acreedores: [], montoAdeudado: 0 })}
-           contentContainerStyle={styles.modalContainer}
-         >
-           <View style={styles.modalContent}>
-             <Text style={styles.modalTitle}>Seleccionar Acreedor</Text>
-             <Text style={styles.modalSubtitle}>
-               Monto a pagar: {formatearMonto(modalSeleccionAcreedor.montoAdeudado)}
-             </Text>
-             <Text style={styles.modalSubtitle}>
-               Selecciona a quién quieres pagar:
-             </Text>
-             
-             {modalSeleccionAcreedor.acreedores.map((acreedor) => {
-               const montoPosible = Math.min(modalSeleccionAcreedor.montoAdeudado, acreedor.balance)
-               return (
-                 <View key={acreedor.participanteId} style={styles.acreedorItem}>
-                   <View style={styles.acreedorInfo}>
-                     <Text style={styles.acreedorNombre}>{acreedor.nickname}</Text>
-                     <Text style={styles.acreedorBalance}>
-                       Le debes: {formatearMonto(acreedor.balance)}
-                     </Text>
-                     <Text style={styles.montoPago}>
-                       Pagar: {formatearMonto(montoPosible)}
-                     </Text>
-                   </View>
-                   <Button
-                     mode="contained"
-                     onPress={() => pagarAcreedorEspecifico(acreedor.participanteId)}
-                     disabled={procesandoPagoParticipante !== null}
-                     loading={procesandoPagoParticipante === modalSeleccionAcreedor.participanteId}
-                     style={styles.botonPagarAcreedor}
-                   >
-                     Pagar
-                   </Button>
-                 </View>
-               )
-             })}
-             
-             <View style={styles.modalButtons}>
-               <Button
-                 mode="outlined"
-                 onPress={() => setModalSeleccionAcreedor({ visible: false, participanteId: '', acreedores: [], montoAdeudado: 0 })}
-                 style={styles.modalButton}
-               >
-                 Cancelar
-               </Button>
-             </View>
-           </View>
-         </Modal>
+
        </View>
      )
    }
@@ -869,80 +648,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#BF360C',
     marginLeft: 8,
-  },
-  botonPagoContainer: {
-    marginTop: 8,
-    paddingHorizontal: 16,
-  },
-  botonPagoParticipante: {
-    borderColor: '#4CAF50',
-    borderWidth: 1,
-  },
-
-  modalContainer: {
-    backgroundColor: 'white',
-    margin: 20,
-    borderRadius: 12,
-    maxHeight: '80%',
-  },
-  modalContent: {
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-
-  modalButtons: {
-    marginTop: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  modalButton: {
-    minWidth: 120,
-  },
-  acreedorItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E9ECEF',
-  },
-  acreedorInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  acreedorNombre: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  acreedorBalance: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 2,
-  },
-  montoPago: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4CAF50',
-  },
-  botonPagarAcreedor: {
-    minWidth: 80,
   },
 })

@@ -29,13 +29,15 @@ import { useFocusEffect } from '@react-navigation/native'
 
 export default function GastosScreen() {
   const [gastos, setGastos] = useState<Gasto[]>([])
+  const [gastosRecibidos, setGastosRecibidos] = useState<Gasto[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [filtroTipo, setFiltroTipo] = useState<TipoGasto | 'todos'>('todos')
+  const [filtroTipo, setFiltroTipo] = useState<TipoGasto | 'todos' | 'recibidos'>('todos')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [gastoAEliminar, setGastoAEliminar] = useState<Gasto | null>(null)
   const [eliminando, setEliminando] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
     cargarGastos()
@@ -48,13 +50,68 @@ export default function GastosScreen() {
     }, [])
   )
 
+  const obtenerGastosRecibidos = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      // Usar la función RPC para obtener gastos compartidos
+      const { data: gastosData, error } = await supabase
+        .rpc('obtener_gastos_compartidos', {
+          usuario_actual_id: user.id
+        })
+
+      if (error) {
+        console.error('Error al obtener gastos recibidos:', error)
+        return []
+      }
+
+      // Transformar los datos para que coincidan con la estructura esperada
+      const gastosTransformados = (gastosData || []).map((gasto: any) => ({
+        id: `${gasto.gasto_id}-${gasto.mi_numero_cuota}`, // Clave única combinando gasto_id y numero_cuota
+        gasto_id: gasto.gasto_id, // ID original del gasto
+        descripcion: gasto.descripcion,
+        monto: gasto.monto_total,
+        fecha: gasto.mi_vencimiento, // Usar fecha de vencimiento
+        cuotas: gasto.cuotas,
+        descuento: gasto.descuento,
+        tipo_descuento: gasto.tipo_descuento,
+        created_at: gasto.created_at,
+        usuario_id: gasto.creador_id,
+        numero_cuota: gasto.mi_numero_cuota,
+        tipo: 'compartido' as TipoGasto,
+        usuarios: {
+          id: gasto.creador_id,
+          nickname: gasto.creador_nickname,
+          email: gasto.creador_email
+        },
+        detalles: [{
+          id: gasto.gasto_id,
+          usuario_id: user.id,
+          monto: gasto.mi_monto,
+          pagado: gasto.mi_pagado,
+          vencimiento: gasto.mi_vencimiento
+        }]
+      }))
+
+      return gastosTransformados
+    } catch (error) {
+      console.error('Error:', error)
+      return []
+    }
+  }
+
   const cargarGastos = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      setCurrentUserId(user.id)
       const gastosData = await gastosService.obtenerGastos(user.id)
+      const gastosRecibidosData = await obtenerGastosRecibidos()
+      
       setGastos(gastosData)
+      setGastosRecibidos(gastosRecibidosData)
     } catch (error) {
       console.error('Error cargando gastos:', error)
       showAlert('Error', 'No se pudieron cargar los gastos')
@@ -100,10 +157,21 @@ export default function GastosScreen() {
   }
 
   const gastosArray = Array.isArray(gastos) ? gastos : []
-  const gastosFiltrados = gastosArray.filter(gasto => {
+  const gastosRecibidosArray = Array.isArray(gastosRecibidos) ? gastosRecibidos : []
+  
+  // Combinar gastos según el filtro seleccionado
+  let gastosCombinados = []
+  if (filtroTipo === 'recibidos') {
+    gastosCombinados = gastosRecibidosArray
+  } else if (filtroTipo === 'todos') {
+    gastosCombinados = [...gastosArray, ...gastosRecibidosArray]
+  } else {
+    gastosCombinados = gastosArray.filter(gasto => gasto.tipo === filtroTipo)
+  }
+  
+  const gastosFiltrados = gastosCombinados.filter(gasto => {
     const coincideBusqueda = gasto.descripcion?.toLowerCase().includes(searchQuery.toLowerCase()) || false
-    const coincideTipo = filtroTipo === 'todos' || gasto.tipo === filtroTipo
-    return coincideBusqueda && coincideTipo
+    return coincideBusqueda
   })
 
   const getTipoColor = (tipo: TipoGasto) => {
@@ -136,13 +204,28 @@ export default function GastosScreen() {
     const progreso = calcularProgresoPago(gasto)
     const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
     const totalPagado = detallesArray.filter(d => d.pagado).reduce((sum, d) => sum + d.monto, 0)
+    const esGastoPropio = gasto.usuario_id === currentUserId
+    const esGastoRecibido = filtroTipo === 'recibidos' || (!esGastoPropio && gasto.tipo === 'compartido')
+    const esGastoCompartido = !esGastoPropio && gasto.tipo === 'compartido'
 
     return (
-      <Card style={styles.gastoCard}>
+      <Card style={[styles.gastoCard, (esGastoCompartido || esGastoRecibido) && styles.gastoCompartidoCard]}>
         <Card.Content>
           <View style={styles.gastoHeader}>
             <View style={styles.gastoInfo}>
-              <Title style={styles.gastoTitulo}>{gasto.descripcion || 'Sin descripción'}</Title>
+              <View style={styles.tituloContainer}>
+                <Title style={styles.gastoTitulo}>{gasto.descripcion || 'Sin descripción'}</Title>
+                {(esGastoCompartido || esGastoRecibido) && (
+                  <Chip
+                    icon="account-group"
+                    style={styles.compartidoChip}
+                    textStyle={styles.compartidoChipText}
+                    compact
+                  >
+                    {esGastoRecibido ? 'Recibido' : 'Solo lectura'}
+                  </Chip>
+                )}
+              </View>
               <View style={styles.gastoMeta}>
                 <Chip
                   icon={getTipoIcon(gasto.tipo)}
@@ -152,27 +235,56 @@ export default function GastosScreen() {
                   {gasto.tipo === 'personal' ? 'Personal' : 'Compartido'}
                 </Chip>
                 <Text style={styles.fechaText}>
-                  {new Date(gasto.created_at).toLocaleDateString('es-AR')}
+                  {esGastoRecibido ? 
+                    `Vence: ${new Date(gasto.fecha).toLocaleDateString('es-AR')}` :
+                    new Date(gasto.created_at).toLocaleDateString('es-AR')
+                  }
                 </Text>
               </View>
+              {esGastoRecibido && gasto.usuarios && (
+                <Text style={styles.creadorText}>
+                  Creado por: {gasto.usuarios.nickname}
+                </Text>
+              )}
             </View>
-            <IconButton
-              icon="delete"
-              size={20}
-              iconColor="#dc2626"
-              onPress={() => confirmarEliminar(gasto)}
-            />
+            {esGastoPropio && (
+              <IconButton
+                icon="delete"
+                size={20}
+                iconColor="#dc2626"
+                onPress={() => confirmarEliminar(gasto)}
+              />
+            )}
           </View>
 
           <View style={styles.montoContainer}>
-            <Text style={styles.montoTotal}>{formatearMonto(gasto.monto || 0)}</Text>
-            <Text style={styles.montoPagado}>
-              Pagado: {formatearMonto(totalPagado)}
-            </Text>
-            {(gasto.descuento || 0) > 0 && (
-              <Text style={styles.descuentoText}>
-                Descuento aplicado: {formatearMonto(gasto.descuento || 0)}
-              </Text>
+            {esGastoRecibido ? (
+              <>
+                <Text style={styles.montoLabel}>Mi Parte</Text>
+                <Text style={styles.montoTotal}>
+                  {formatearMonto(gasto.detalles?.[0]?.monto || 0)}
+                </Text>
+                {gasto.numero_cuota && gasto.cuotas && gasto.cuotas > 1 && (
+                  <Text style={styles.cuotasInfo}>
+                    Cuota {gasto.numero_cuota}/{gasto.cuotas}
+                  </Text>
+                )}
+                <Text style={styles.montoPagado}>
+                  Estado: {gasto.detalles?.[0]?.pagado ? 'Pagado' : 'Pendiente'}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.montoTotal}>{formatearMonto(gasto.monto || 0)}</Text>
+                <Text style={styles.montoPagado}>
+                  Pagado: {formatearMonto(totalPagado)}
+                </Text>
+                {(gasto.descuento || 0) > 0 && (
+                  <Text style={styles.descuentoText}>
+                    Descuento aplicado: {formatearMonto(gasto.descuento || 0)}
+                  </Text>
+                )}
+              </>
             )}
           </View>
 
@@ -196,7 +308,7 @@ export default function GastosScreen() {
             </Text>
           </View>
 
-          {detallesArray.length > 0 && (() => {
+          {!esGastoRecibido && detallesArray.length > 0 && (() => {
             const participantesUnicos = new Set(
       detallesArray.map(d => d.usuario_id || d.nombre_participante)
     ).size;
@@ -206,25 +318,41 @@ export default function GastosScreen() {
               </Text>
             );
           })()}
+          {esGastoRecibido && (
+            <View style={styles.espaciadoParticipantes} />
+          )}
         </Card.Content>
 
-        <Card.Actions>
-          <Button
-            mode="outlined"
-            onPress={() => router.push(`/gasto/${gasto.id}`)}
-            icon="eye"
-          >
-            Ver Detalles
-          </Button>
-          <Button
-            mode="contained"
-            onPress={() => router.push(`/gasto/${gasto.id}/pagar`)}
-            icon="credit-card"
-            disabled={progreso === 100}
-          >
-            {progreso === 100 ? 'Pagado' : 'Pagar'}
-          </Button>
-        </Card.Actions>
+        {!esGastoRecibido && (
+          <Card.Actions>
+            <Button
+              mode="outlined"
+              onPress={() => router.push(`/gasto/${gasto.id}`)}
+              icon="eye"
+            >
+              Ver Detalles
+            </Button>
+            {esGastoPropio && (
+              <Button
+                mode="contained"
+                onPress={() => router.push(`/gasto/${gasto.id}/pagar`)}
+                icon="credit-card"
+                disabled={progreso === 100}
+              >
+                {progreso === 100 ? 'Pagado' : 'Pagar'}
+              </Button>
+            )}
+            {esGastoCompartido && (
+              <Button
+                mode="contained-tonal"
+                icon="account-group"
+                disabled
+              >
+                Gasto compartido
+              </Button>
+            )}
+          </Card.Actions>
+        )}
       </Card>
     )
   }
@@ -282,6 +410,21 @@ export default function GastosScreen() {
               filtroTipo === 'compartido' && styles.filtroButtonTextActive
             ]}>
               Compartido
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[
+              styles.filtroButton,
+              filtroTipo === 'recibidos' && styles.filtroButtonActive
+            ]}
+            onPress={() => setFiltroTipo('recibidos')}
+          >
+            <Text style={[
+              styles.filtroButtonText,
+              filtroTipo === 'recibidos' && styles.filtroButtonTextActive
+            ]}>
+              Recibidos
             </Text>
           </TouchableOpacity>
         </View>
@@ -403,6 +546,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     elevation: 2,
   },
+  gastoCompartidoCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+    backgroundColor: '#FFF8E1',
+  },
   gastoHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -412,10 +560,25 @@ const styles = StyleSheet.create({
   gastoInfo: {
     flex: 1,
   },
+  tituloContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   gastoTitulo: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 4,
+    flex: 1,
+  },
+  compartidoChip: {
+    backgroundColor: '#E3F2FD',
+    marginLeft: 8,
+  },
+  compartidoChipText: {
+    color: '#1976D2',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   gastoMeta: {
     flexDirection: 'row',
@@ -450,6 +613,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FF9800',
     fontStyle: 'italic',
+  },
+  creadorText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  espaciadoParticipantes: {
+    height: 16,
+    marginTop: 4,
   },
   cuotasText: {
     fontSize: 12,

@@ -60,6 +60,10 @@ export default function NuevoGastoScreen() {
     nickname: '',
     email: ''
   })
+  const [tabSeleccionada, setTabSeleccionada] = useState('no-usuario')
+  const [emailBusqueda, setEmailBusqueda] = useState('')
+  const [usuarioEncontrado, setUsuarioEncontrado] = useState<any>(null)
+  const [buscandoUsuario, setBuscandoUsuario] = useState(false)
 
 
   useEffect(() => {
@@ -89,6 +93,10 @@ export default function NuevoGastoScreen() {
       nickname: '',
       email: ''
     })
+    setTabSeleccionada('no-usuario')
+    setEmailBusqueda('')
+    setUsuarioEncontrado(null)
+    setBuscandoUsuario(false)
     
     // Reagregar usuario actual para gasto personal después del reset
     setTimeout(() => {
@@ -124,22 +132,78 @@ export default function NuevoGastoScreen() {
     }
   }
 
-  const agregarParticipante = () => {
+  const buscarUsuarioPorEmail = async () => {
+    if (!emailBusqueda.trim()) {
+      showAlert('Error', 'El email es requerido')
+      return
+    }
+
+    setBuscandoUsuario(true)
+    try {
+      const { data: usuarios, error } = await supabase
+        .rpc('buscar_usuario_por_email', { email_busqueda: emailBusqueda.trim() })
+
+      const usuario = usuarios?.[0]
+
+      if (error || !usuario) {
+        showAlert('Usuario no encontrado', 'No se encontró un usuario registrado con ese email')
+        setUsuarioEncontrado(null)
+        return
+      }
+
+      // Verificar si ya está agregado
+      if (participantes.find(p => p.usuario_id === usuario.id)) {
+        showAlert('Error', 'Este usuario ya está agregado')
+        return
+      }
+
+      setUsuarioEncontrado(usuario)
+    } catch (error) {
+      console.error('Error buscando usuario:', error)
+      showAlert('Error', 'Error al buscar el usuario')
+    } finally {
+      setBuscandoUsuario(false)
+    }
+  }
+
+  const agregarParticipanteNoUsuario = () => {
     if (!nuevoParticipante.nickname.trim()) {
-      showAlert('Error', 'El nickname es requerido')
+      showAlert('Error', 'El nombre es requerido')
       return
     }
 
     const participante: ParticipanteForm = {
       tempId: Date.now().toString(),
       nickname: nuevoParticipante.nickname.trim(),
-      email: nuevoParticipante.email.trim() || undefined,
+      email: undefined,
       usuario_id: undefined
     }
 
     setParticipantes([...participantes, participante])
-    setNuevoParticipante({ nickname: '', email: '' })
+    cerrarModalParticipante()
+  }
+
+  const agregarUsuarioEncontrado = () => {
+    if (!usuarioEncontrado) return
+
+    const participante: ParticipanteForm = {
+      tempId: Date.now().toString(),
+      nickname: usuarioEncontrado.nickname,
+      email: usuarioEncontrado.email,
+      usuario_id: usuarioEncontrado.id
+    }
+
+    setParticipantes([...participantes, participante])
+    cerrarModalParticipante()
+  }
+
+  const cerrarModalParticipante = () => {
     setShowParticipanteModal(false)
+    setNuevoParticipante({ nickname: '', email: '' })
+    setTabSeleccionada('no-usuario')
+    setEmailBusqueda('')
+    setUsuarioEncontrado(null)
+    setBuscandoUsuario(false)
   }
 
   const eliminarParticipante = (tempId: string) => {
@@ -783,7 +847,7 @@ export default function NuevoGastoScreen() {
       <Portal>
         <Modal
           visible={showParticipanteModal}
-          onDismiss={() => setShowParticipanteModal(false)}
+          onDismiss={cerrarModalParticipante}
           contentContainerStyle={styles.modalContainer}
         >
           <KeyboardAvoidingView
@@ -791,42 +855,114 @@ export default function NuevoGastoScreen() {
             style={styles.modalKeyboardAvoidingView}
           >
             <Card>
-            <Card.Title title="Agregar Participante" />
-            <Card.Content>
-              <TextInput
-                label="Nickname *"
-                value={nuevoParticipante.nickname}
-                onChangeText={(text) => 
-                  setNuevoParticipante({ ...nuevoParticipante, nickname: text })
-                }
-                style={styles.input}
-                mode="outlined"
-              />
-              <TextInput
-                label="Email (opcional)"
-                value={nuevoParticipante.email}
-                onChangeText={(text) => 
-                  setNuevoParticipante({ ...nuevoParticipante, email: text })
-                }
-                keyboardType="email-address"
-                style={styles.input}
-                mode="outlined"
-              />
-            </Card.Content>
-            <Card.Actions>
-              <Button
-                mode="outlined"
-                onPress={() => setShowParticipanteModal(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                mode="contained"
-                onPress={agregarParticipante}
-              >
-                Agregar
-              </Button>
-            </Card.Actions>
+              <Card.Title title="Agregar Participante" />
+              <Card.Content>
+                {/* Pestañas */}
+                <SegmentedButtons
+                  value={tabSeleccionada}
+                  onValueChange={setTabSeleccionada}
+                  buttons={[
+                    { 
+                      value: 'no-usuario', 
+                      label: 'Sin Usuario',
+                      style: { flex: 1 }
+                    },
+                    { 
+                      value: 'buscar-usuario', 
+                      label: 'Buscar Usuario',
+                      style: { flex: 1 }
+                    }
+                  ]}
+                  style={styles.tabButtons}
+                />
+
+                {/* Contenido de la pestaña "Sin Usuario" */}
+                {tabSeleccionada === 'no-usuario' && (
+                  <View style={styles.tabContent}>
+                    <Text style={styles.tabDescription}>
+                      Agregar un participante que no tiene cuenta en la app
+                    </Text>
+                    <TextInput
+                      label="Nombre del participante *"
+                      value={nuevoParticipante.nickname}
+                      onChangeText={(text) => 
+                        setNuevoParticipante({ ...nuevoParticipante, nickname: text })
+                      }
+                      style={styles.input}
+                      mode="outlined"
+                    />
+                  </View>
+                )}
+
+                {/* Contenido de la pestaña "Buscar Usuario" */}
+                {tabSeleccionada === 'buscar-usuario' && (
+                  <View style={styles.tabContent}>
+                    <Text style={styles.tabDescription}>
+                      Buscar un usuario registrado por su email. Podrá ver el gasto pero no modificarlo.
+                    </Text>
+                    <View style={styles.busquedaContainer}>
+                      <TextInput
+                        label="Email del usuario *"
+                        value={emailBusqueda}
+                        onChangeText={setEmailBusqueda}
+                        keyboardType="email-address"
+                        style={[styles.input, styles.emailInput]}
+                        mode="outlined"
+                      />
+                      <Button
+                        mode="contained"
+                        onPress={buscarUsuarioPorEmail}
+                        loading={buscandoUsuario}
+                        disabled={buscandoUsuario || !emailBusqueda.trim()}
+                        style={styles.buscarButton}
+                      >
+                        Buscar
+                      </Button>
+                    </View>
+                    
+                    {/* Usuario encontrado */}
+                    {usuarioEncontrado && (
+                      <Card style={styles.usuarioEncontradoCard}>
+                        <Card.Content>
+                          <Text style={styles.usuarioEncontradoNombre}>
+                            {usuarioEncontrado.nickname}
+                          </Text>
+                          <Text style={styles.usuarioEncontradoEmail}>
+                            {usuarioEncontrado.email}
+                          </Text>
+                        </Card.Content>
+                      </Card>
+                    )}
+                  </View>
+                )}
+              </Card.Content>
+              
+              <Card.Actions>
+                <Button
+                  mode="outlined"
+                  onPress={cerrarModalParticipante}
+                >
+                  Cancelar
+                </Button>
+                
+                {tabSeleccionada === 'no-usuario' ? (
+                  <Button
+                    mode="contained"
+                    onPress={agregarParticipanteNoUsuario}
+                    disabled={!nuevoParticipante.nickname.trim()}
+                  >
+                    Agregar
+                  </Button>
+                ) : (
+                  <Button
+                    mode="contained"
+                    onPress={agregarUsuarioEncontrado}
+                    disabled={!usuarioEncontrado}
+                  >
+                    Agregar Usuario
+                  </Button>
+                )}
+              </Card.Actions>
             </Card>
           </KeyboardAvoidingView>
         </Modal>
@@ -948,5 +1084,41 @@ export const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginBottom: 16,
     lineHeight: 16,
+  },
+  tabButtons: {
+    marginBottom: 16,
+  },
+  tabContent: {
+    marginTop: 8,
+  },
+  tabDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  busquedaContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  emailInput: {
+    flex: 1,
+  },
+  buscarButton: {
+    marginBottom: 16,
+  },
+  usuarioEncontradoCard: {
+    marginTop: 16,
+    backgroundColor: '#e8f5e8',
+  },
+  usuarioEncontradoNombre: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+  },
+  usuarioEncontradoEmail: {
+    fontSize: 14,
+    color: '#4caf50',
   },
 })
