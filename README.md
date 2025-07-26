@@ -170,8 +170,7 @@ gastos-app/
 │   ├── _layout.tsx        # Layout principal
 │   └── index.tsx          # Pantalla inicial
 ├── components/            # Componentes reutilizables
-│   ├── LoginScreen.tsx    # Pantalla de login
-│   └── UserProfileSetup.tsx # Configuración de perfil
+│   └── LoginScreen.tsx    # Pantalla de login
 ├── lib/                   # Utilidades y configuración
 │   ├── supabase.ts       # Cliente y tipos de Supabase
 │   └── alerts.ts         # Utilidades para alertas

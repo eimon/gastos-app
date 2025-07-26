@@ -35,13 +35,28 @@ export default function PagosScreen() {
 
   const cargarPagos = async () => {
     try {
+      console.log('=== INICIO cargarPagos ===')
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        console.log('No hay usuario autenticado')
+        return
+      }
 
+      console.log('Usuario ID:', user.id)
+      console.log('Llamando a obtenerPagos...')
+      console.log('Tipo de pagosService:', typeof pagosService)
+      console.log('Tipo de obtenerPagos:', typeof pagosService.obtenerPagos)
       const pagosData = await pagosService.obtenerPagos(user.id)
-      setPagos(pagosData)
+      console.log('Datos recibidos:', typeof pagosData, Array.isArray(pagosData), pagosData)
+      
+      const pagosArray = Array.isArray(pagosData) ? pagosData : []
+      console.log('Array final:', pagosArray.length, 'elementos')
+      setPagos(pagosArray)
+      console.log('=== FIN cargarPagos ===')
     } catch (error) {
       console.error('Error cargando pagos:', error)
+      console.error('Error stack:', error.stack)
+      setPagos([])
       showAlert('Error', 'No se pudieron cargar los pagos')
     } finally {
       setLoading(false)
@@ -75,18 +90,29 @@ export default function PagosScreen() {
     )
   }
 
-  const pagosFiltrados = pagos.filter(pago => {
-    const gastoDescripcion = pago.gasto_detalle?.gasto?.descripcion || ''
-    const participanteNombre = pago.gasto_detalle?.participante?.nickname || ''
-    
-    const coincideBusqueda = 
-      gastoDescripcion.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      participanteNombre.toLowerCase().includes(searchQuery.toLowerCase())
-    
-    const coincideMedio = filtroMedio === 'todos' || pago.medio_pago === filtroMedio
-    
-    return coincideBusqueda && coincideMedio
-  })
+  // Asegurar que pagos es un array válido antes de cualquier operación
+  const pagosArray = Array.isArray(pagos) ? pagos : []
+  console.log('pagosArray para filtrar:', pagosArray.length, 'elementos')
+  
+  let pagosFiltrados = []
+  try {
+    pagosFiltrados = pagosArray.filter(pago => {
+      const gastoDescripcion = pago.gasto_detalle?.gasto?.descripcion || ''
+      const participanteNombre = pago.gasto_detalle?.usuario?.nickname || ''
+      
+      const coincideBusqueda = 
+        gastoDescripcion.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        participanteNombre.toLowerCase().includes(searchQuery.toLowerCase())
+      
+      const coincideMedio = filtroMedio === 'todos' || pago.medio_pago === filtroMedio
+      
+      return coincideBusqueda && coincideMedio
+    })
+    console.log('pagosFiltrados resultado:', pagosFiltrados.length, 'elementos')
+  } catch (error) {
+    console.error('Error en filter de pagosFiltrados:', error)
+    pagosFiltrados = []
+  }
 
   const getMedioColor = (medio: MedioPago) => {
     return medio === 'Efectivo' ? '#4CAF50' : '#2196F3'
@@ -104,15 +130,27 @@ export default function PagosScreen() {
   }
 
   const calcularTotalPorMedio = (medio: MedioPago) => {
-    return pagos
-      .filter(p => p.medio_pago === medio)
-      .reduce((sum, p) => sum + (p.gasto_detalle?.monto || 0), 0)
+    try {
+      const pagosArray = Array.isArray(pagos) ? pagos : []
+      console.log('calcularTotalPorMedio para:', medio, 'con', pagosArray.length, 'pagos')
+      
+      const pagosFiltradosPorMedio = pagosArray.filter(p => p.medio_pago === medio)
+      console.log('Pagos filtrados por medio:', pagosFiltradosPorMedio.length)
+      
+      const total = pagosFiltradosPorMedio.reduce((sum, p) => sum + p.monto, 0)
+      console.log('Total calculado:', total)
+      
+      return total
+    } catch (error) {
+      console.error('Error en calcularTotalPorMedio:', error)
+      return 0
+    }
   }
 
   const renderPago = ({ item: pago }: { item: Pago }) => {
     const gastoDetalle = pago.gasto_detalle
     const gasto = gastoDetalle?.gasto
-    const participante = gastoDetalle?.participante
+    const participante = gastoDetalle?.usuario
 
     return (
       <Card style={styles.pagoCard}>
@@ -151,13 +189,13 @@ export default function PagosScreen() {
 
           <View style={styles.montoContainer}>
             <Text style={styles.montoText}>
-              {formatearMonto(gastoDetalle?.monto || 0)}
+              {formatearMonto(pago.monto)}
             </Text>
           </View>
 
           {pago.comprobante_url && (
             <View style={styles.comprobanteContainer}>
-              <Ionicons name="document-attach" size={16} color="#666" />
+              <Ionicons name="attach" size={16} color="#666" />
               <Text style={styles.comprobanteText}>Comprobante adjunto</Text>
             </View>
           )}

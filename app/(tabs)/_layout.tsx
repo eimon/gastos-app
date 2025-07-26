@@ -93,19 +93,6 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="participantes"
-          options={{
-            title: 'Participantes',
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons 
-                name={focused ? 'people' : 'people-outline'} 
-                size={24} 
-                color={color} 
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
           name="pagos"
           options={{
             title: 'Pagos',
@@ -118,6 +105,7 @@ export default function TabLayout() {
             ),
           }}
         />
+
         <Tabs.Screen
           name="resumen"
           options={{
@@ -131,6 +119,7 @@ export default function TabLayout() {
             ),
           }}
         />
+
       </Tabs>
     </Provider>
   )

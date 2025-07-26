@@ -9,6 +9,8 @@
     "jsx": "react-native",
     "lib": [
       "dom",
+      "dom.iterable",
+      "es2022",
       "esnext"
     ],
     "moduleResolution": "node",
@@ -29,12 +31,16 @@
       ],
       "@/assets/*": [
         "./assets/*"
+      ],
+      "@/types/*": [
+        "./types/*"
       ]
     }
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx"
+    "**/*.tsx",
+    "types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules"

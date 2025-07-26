@@ -18,11 +18,14 @@ import {
   Chip,
   IconButton,
   Searchbar,
+  Modal,
+  Portal,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase, gastosService, Gasto, TipoGasto } from '../../lib/supabase'
 import { router } from 'expo-router'
 import { showAlert, showConfirm } from '../../lib/alerts'
+import { useFocusEffect } from '@react-navigation/native'
 
 export default function GastosScreen() {
   const [gastos, setGastos] = useState<Gasto[]>([])
@@ -30,10 +33,20 @@ export default function GastosScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [filtroTipo, setFiltroTipo] = useState<TipoGasto | 'todos'>('todos')
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [gastoAEliminar, setGastoAEliminar] = useState<Gasto | null>(null)
+  const [eliminando, setEliminando] = useState(false)
 
   useEffect(() => {
     cargarGastos()
   }, [])
+
+  // Recargar datos cada vez que se enfoque la pestaña
+  useFocusEffect(
+    React.useCallback(() => {
+      cargarGastos()
+    }, [])
+  )
 
   const cargarGastos = async () => {
     try {
@@ -56,28 +69,38 @@ export default function GastosScreen() {
     cargarGastos()
   }
 
-  const eliminarGasto = async (gastoId: string) => {
+  const eliminarGasto = async () => {
+    if (!gastoAEliminar) return
+    
+    setEliminando(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      await gastosService.eliminarGasto(gastoId, user.id)
+      await gastosService.eliminarGasto(gastoAEliminar.id, user.id)
       await cargarGastos()
+      setShowDeleteModal(false)
+      setGastoAEliminar(null)
       showAlert('Éxito', 'Gasto eliminado correctamente')
     } catch (error: any) {
       showAlert('Error', error.message || 'No se pudo eliminar el gasto')
+    } finally {
+      setEliminando(false)
     }
   }
 
   const confirmarEliminar = (gasto: Gasto) => {
-    showConfirm(
-      'Eliminar Gasto',
-      `¿Estás seguro de que deseas eliminar "${gasto.descripcion}"?`,
-      () => eliminarGasto(gasto.id)
-    )
+    setGastoAEliminar(gasto)
+    setShowDeleteModal(true)
   }
 
-  const gastosFiltrados = gastos.filter(gasto => {
+  const cancelarEliminar = () => {
+    setShowDeleteModal(false)
+    setGastoAEliminar(null)
+  }
+
+  const gastosArray = Array.isArray(gastos) ? gastos : []
+  const gastosFiltrados = gastosArray.filter(gasto => {
     const coincideBusqueda = gasto.descripcion?.toLowerCase().includes(searchQuery.toLowerCase()) || false
     const coincideTipo = filtroTipo === 'todos' || gasto.tipo === filtroTipo
     return coincideBusqueda && coincideTipo
@@ -87,8 +110,9 @@ export default function GastosScreen() {
     return tipo === 'personal' ? '#4CAF50' : '#FF9800'
   }
 
-  const getTipoIcon = (tipo: TipoGasto) => {
-    return tipo === 'personal' ? 'person' : 'people'
+  
+  const getTipoIcon = (tipo: string) => {
+    return tipo === 'personal' ? 'account' : 'account-group'
   }
 
   const formatearMonto = (monto: number) => {
@@ -99,14 +123,19 @@ export default function GastosScreen() {
   }
 
   const calcularProgresoPago = (gasto: Gasto) => {
-    if (!gasto.detalles || gasto.detalles.length === 0) return 0
-    const pagados = gasto.detalles.filter(d => d.pagado).length
-    return (pagados / gasto.detalles.length) * 100
+    const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
+    if (detallesArray.length === 0) return 0
+    
+    const totalMonto = gasto.monto - gasto.descuento || 0
+    const montoPagado = detallesArray.filter(d => d.pagado).reduce((sum, d) => sum + d.monto, 0)
+    
+    return totalMonto > 0 ? (montoPagado / totalMonto) * 100 : 0
   }
 
   const renderGasto = ({ item: gasto }: { item: Gasto }) => {
     const progreso = calcularProgresoPago(gasto)
-    const totalPagado = gasto.detalles?.filter(d => d.pagado).reduce((sum, d) => sum + d.monto, 0) || 0
+    const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
+    const totalPagado = detallesArray.filter(d => d.pagado).reduce((sum, d) => sum + d.monto, 0)
 
     return (
       <Card style={styles.gastoCard}>
@@ -136,15 +165,20 @@ export default function GastosScreen() {
           </View>
 
           <View style={styles.montoContainer}>
-            <Text style={styles.montoTotal}>{formatearMonto(gasto.monto_total)}</Text>
+            <Text style={styles.montoTotal}>{formatearMonto(gasto.monto || 0)}</Text>
             <Text style={styles.montoPagado}>
               Pagado: {formatearMonto(totalPagado)}
             </Text>
+            {(gasto.descuento || 0) > 0 && (
+              <Text style={styles.descuentoText}>
+                Descuento aplicado: {formatearMonto(gasto.descuento || 0)}
+              </Text>
+            )}
           </View>
 
-          {gasto.cuotas > 1 && (
+          {(gasto.cuotas || 1) > 1 && (
             <Text style={styles.cuotasText}>
-              {gasto.cuotas} cuotas
+              {gasto.cuotas || 1} cuotas
             </Text>
           )}
 
@@ -162,11 +196,16 @@ export default function GastosScreen() {
             </Text>
           </View>
 
-          {gasto.detalles && gasto.detalles.length > 0 && (
-            <Text style={styles.participantesText}>
-              {gasto.detalles.length} participante{gasto.detalles.length > 1 ? 's' : ''}
-            </Text>
-          )}
+          {detallesArray.length > 0 && (() => {
+            const participantesUnicos = new Set(
+      detallesArray.map(d => d.usuario_id || d.nombre_participante)
+    ).size;
+            return (
+              <Text style={styles.participantesText}>
+                {participantesUnicos} participante{participantesUnicos > 1 ? 's' : ''}
+              </Text>
+            );
+          })()}
         </Card.Content>
 
         <Card.Actions>
@@ -258,7 +297,7 @@ export default function GastosScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="wallet-outline" size={64} color="#ccc" />
+            <Ionicons name="wallet" size={64} color="#ccc" />
             <Text style={styles.emptyText}>No hay gastos registrados</Text>
             <Text style={styles.emptySubtext}>
               Toca el botón + para crear tu primer gasto
@@ -270,8 +309,55 @@ export default function GastosScreen() {
       <FAB
         style={styles.fab}
         icon="plus"
-        onPress={() => router.push('/crear-gasto')}
+        onPress={() => router.push('/nuevo-gasto')}
       />
+
+      {/* Modal de confirmación para eliminar */}
+      <Portal>
+        <Modal
+          visible={showDeleteModal}
+          onDismiss={cancelarEliminar}
+          contentContainerStyle={styles.modalContainer}
+        >
+          <Card>
+            <Card.Content>
+              <View style={styles.modalHeader}>
+                <Ionicons name="warning" size={48} color="#FF5722" />
+                <Title style={styles.modalTitle}>Eliminar Gasto</Title>
+              </View>
+              
+              <Paragraph style={styles.modalText}>
+                ¿Estás seguro de que deseas eliminar el gasto "{gastoAEliminar?.descripcion}"?
+              </Paragraph>
+              
+              <Paragraph style={styles.modalWarning}>
+                Esta acción no se puede deshacer.
+              </Paragraph>
+            </Card.Content>
+            
+            <Card.Actions style={styles.modalActions}>
+              <Button
+                mode="outlined"
+                onPress={cancelarEliminar}
+                disabled={eliminando}
+                style={styles.cancelButton}
+              >
+                Cancelar
+              </Button>
+              <Button
+                mode="contained"
+                onPress={eliminarGasto}
+                loading={eliminando}
+                disabled={eliminando}
+                buttonColor="#FF5722"
+                style={styles.deleteButton}
+              >
+                Eliminar
+              </Button>
+            </Card.Actions>
+          </Card>
+        </Modal>
+      </Portal>
     </View>
   )
 }
@@ -360,6 +446,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4CAF50',
   },
+  descuentoText: {
+    fontSize: 12,
+    color: '#FF9800',
+    fontStyle: 'italic',
+  },
   cuotasText: {
     fontSize: 12,
     color: '#666',
@@ -410,5 +501,46 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: '#2196F3',
+  },
+  modalContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    margin: 20,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  modalText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 8,
+    color: '#333',
+  },
+  modalWarning: {
+    fontSize: 14,
+    textAlign: 'center',
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  modalActions: {
+    justifyContent: 'space-between',
+    paddingTop: 16,
+  },
+  cancelButton: {
+    flex: 1,
+    marginRight: 8,
+  },
+  deleteButton: {
+    flex: 1,
+    marginLeft: 8,
   },
 })

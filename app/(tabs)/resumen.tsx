@@ -83,21 +83,41 @@ export default function ResumenScreen() {
     cargarDatos()
   }
 
-  const calcularEstadisticas = (gastosData: Gasto[], pagosData: Pago[]) => {
-    const totalGastos = gastosData.reduce((sum, gasto) => sum + gasto.monto_total, 0)
-    const totalPagado = pagosData.reduce((sum, pago) => sum + (pago.gasto_detalle?.monto || 0), 0)
-    const totalPendiente = totalGastos - totalPagado
+  // Función para calcular el saldo actual de un detalle basado en los pagos
+  const calcularSaldoDetalle = (detalle: GastoDetalle) => {
+    if (!detalle.pagos || !Array.isArray(detalle.pagos)) return 0
+    return detalle.pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0)
+  }
 
-    const gastosPersonales = gastosData.filter(g => g.tipo === 'personal').length
-    const gastosCompartidos = gastosData.filter(g => g.tipo === 'compartido').length
+  const calcularEstadisticas = (gastosData: Gasto[], pagosData: Pago[]) => {
+    // Asegurar que los datos sean arrays
+    const gastosArray = Array.isArray(gastosData) ? gastosData : []
+    const pagosArray = Array.isArray(pagosData) ? pagosData : []
+    
+    const totalGastos = gastosArray.reduce((sum, gasto) => sum + (gasto.monto_total || 0), 0)
+    
+    // Calcular total pagado basado en la columna 'pagado'
+    const totalPagado = gastosArray.reduce((sum, gasto) => {
+      const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
+      return sum + detallesArray.filter(d => d.pagado).reduce((detSum, d) => detSum + d.monto, 0)
+    }, 0)
+    
+    // Calcular total pendiente basado en gastos_detalle no pagados
+    const totalPendiente = gastosArray.reduce((sum, gasto) => {
+      const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
+      return sum + detallesArray.filter(d => !d.pagado).reduce((detSum, d) => detSum + d.monto, 0)
+    }, 0)
+
+    const gastosPersonales = gastosArray.filter(g => g.tipo === 'personal').length
+    const gastosCompartidos = gastosArray.filter(g => g.tipo === 'compartido').length
 
     const pagosPorMedio = {
-      efectivo: pagosData
+      efectivo: pagosArray
         .filter(p => p.medio_pago === 'Efectivo')
-        .reduce((sum, p) => sum + (p.gasto_detalle?.monto || 0), 0),
-      transferencia: pagosData
+        .reduce((sum, p) => sum + p.monto, 0),
+      transferencia: pagosArray
         .filter(p => p.medio_pago === 'Transferencia')
-        .reduce((sum, p) => sum + (p.gasto_detalle?.monto || 0), 0)
+        .reduce((sum, p) => sum + p.monto, 0)
     }
 
     // Gastos por mes (últimos 6 meses)
@@ -110,11 +130,11 @@ export default function ResumenScreen() {
       gastosPorMes[mesKey] = 0
     }
 
-    gastosData.forEach(gasto => {
+    gastosArray.forEach(gasto => {
       const fechaGasto = new Date(gasto.created_at)
       const mesKey = fechaGasto.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })
       if (gastosPorMes.hasOwnProperty(mesKey)) {
-        gastosPorMes[mesKey] += gasto.monto_total
+        gastosPorMes[mesKey] += (gasto.monto_total || 0)
       }
     })
 
@@ -142,13 +162,15 @@ export default function ResumenScreen() {
   }
 
   const obtenerGastosRecientes = () => {
-    return gastos
+    const gastosArray = Array.isArray(gastos) ? gastos : []
+    return gastosArray
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 5)
   }
 
   const obtenerPagosRecientes = () => {
-    return pagos
+    const pagosArray = Array.isArray(pagos) ? pagos : []
+    return pagosArray
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 5)
   }
@@ -225,7 +247,7 @@ export default function ResumenScreen() {
           <View style={styles.distribucionContainer}>
             <View style={styles.distribucionItem}>
               <View style={styles.distribucionIcono}>
-                <Ionicons name="person" size={24} color="#4CAF50" />
+                <Ionicons name="person-outline" size={24} color="#4CAF50" />
               </View>
               <View style={styles.distribucionInfo}>
                 <Text style={styles.distribucionNumero}>{estadisticas.gastosPersonales}</Text>
@@ -333,7 +355,7 @@ export default function ResumenScreen() {
                 </View>
                 <View style={styles.itemRecenteMonto}>
                   <Text style={styles.itemRecenteMontoText}>
-                    {formatearMonto(pago.gasto_detalle?.monto || 0)}
+                    {formatearMonto(pago.monto)}
                   </Text>
                   <Chip
                     style={[

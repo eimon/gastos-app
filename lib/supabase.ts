@@ -15,45 +15,33 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // Enums
 export type TipoGasto = 'personal' | 'compartido'
 export type MedioPago = 'Efectivo' | 'Transferencia'
+export type TipoDescuento = 'uniforme' | 'prorrateo'
 
-// Interfaces principales
+
+// Interfaces principales actualizadas para esquema simplificado
 export interface Usuario {
   id: string
-  username: string
   email: string
+  nickname: string
   first_name?: string
   last_name?: string
-  is_active: boolean
-  is_verified: boolean
-  rol: string
-  provider?: string
-  provider_id?: string
-  foto_url?: string
+  saldo_total?: number
   created_at: string
   updated_at: string
-}
-
-export interface Participante {
-  id: string
-  email?: string
-  nickname: string
-  usuario_id?: string
-  es_registrado: boolean
-  created_at: string
-  updated_at: string
-  // Relaciones
-  usuario?: Usuario
 }
 
 export interface Gasto {
   id: string
-  descripcion?: string
-  monto_total: number
+  usuario_id: string
+  descripcion: string
+  monto: number
   tipo: TipoGasto
+  fecha: string
   cuotas: number
   descuento?: number
-  creado_por: string
+  tipo_descuento?: TipoDescuento
   created_at: string
+  updated_at: string
   // Relaciones
   usuario?: Usuario
   detalles?: GastoDetalle[]
@@ -62,28 +50,47 @@ export interface Gasto {
 export interface GastoDetalle {
   id: string
   gasto_id: string
-  participante_id: string
+  usuario_id: string  // Referencia directa a usuarios
   monto: number
   pagado: boolean
-  saldo?: number
   vencimiento?: string
+  numero_cuota: number
+  created_at: string
+  updated_at: string
   // Relaciones
   gasto?: Gasto
-  participante?: Participante
+  usuario?: Usuario
   pagos?: Pago[]
 }
 
 export interface Pago {
   id: string
   gasto_detalle_id: string
-  medio_pago: MedioPago
-  comprobante_url?: string
+  monto: number
+  fecha_pago: string
+  medio_pago: 'efectivo' | 'transferencia' | 'descuento'
+  notas?: string
   created_at: string
+  updated_at: string
   // Relaciones
   gasto_detalle?: GastoDetalle
 }
 
-// Tipos para crear/actualizar
+// Interfaces para crear entidades
+export interface GastoCreate {
+  descripcion: string
+  monto_total: number
+  tipo: TipoGasto
+  fecha: string
+  cuotas: number
+  descuento?: number
+  tipo_descuento?: TipoDescuento
+  participantes: ParticipanteCreate[]
+  primer_vencimiento: string
+  pagado?: boolean
+  usuario_id?: string
+}
+
 export interface ParticipanteCreate {
   nickname: string
   email?: string
@@ -91,22 +98,70 @@ export interface ParticipanteCreate {
   monto_total: number
 }
 
-export interface GastoCreate {
-  descripcion?: string
-  tipo: TipoGasto
-  cuotas?: number
-  descuento?: number
-  primer_vencimiento: string
-  participantes: ParticipanteCreate[]
+export interface GastoDetalleCreate {
+  gasto_id: string
+  usuario_id?: string
+  nombre_participante?: string
+  monto: number
   pagado?: boolean
+  vencimiento?: string
+  numero_cuota: number
 }
 
 export interface PagoCreate {
+  gasto_detalle_id: string
+  monto: number
   medio_pago: MedioPago
+  fecha_pago: string
+  notas?: string
   comprobante_url?: string
 }
 
+// Interfaces para IOUs eliminadas - funcionalidad simplificada
+
 // Funciones de utilidad para trabajar con Supabase
+
+// Función para calcular montos de cuotas con descuento
+export function calcularMontosConDescuento(
+  montoTotal: number,
+  cuotas: number,
+  descuento: number,
+  tipoDescuento: TipoDescuento
+): number[] {
+  const montoNeto = montoTotal - descuento
+  const montoPorCuota = montoTotal / cuotas
+  const montosResultado: number[] = []
+  
+  if (tipoDescuento === 'uniforme') {
+    // Distribución uniforme: (monto - descuento) / cuotas
+    const montoCuotaUniforme = montoNeto / cuotas
+    for (let i = 0; i < cuotas; i++) {
+      montosResultado.push(Math.round(montoCuotaUniforme * 100) / 100)
+    }
+  } else {
+    // Prorrateo: descuento se aplica desde la primera cuota
+    let descuentoRestante = descuento
+    
+    for (let i = 0; i < cuotas; i++) {
+      let montoCuota = montoPorCuota
+      
+      if (descuentoRestante >= montoPorCuota) {
+        // El descuento cubre toda la cuota
+        montoCuota = 0
+        descuentoRestante -= montoPorCuota
+      } else if (descuentoRestante > 0) {
+        // El descuento cubre parte de la cuota
+        montoCuota = montoPorCuota - descuentoRestante
+        descuentoRestante = 0
+      }
+      
+      montosResultado.push(Math.round(montoCuota * 100) / 100)
+    }
+  }
+  
+  return montosResultado
+}
+
 export const gastosService = {
   // Obtener gastos del usuario
   async obtenerGastos(userId: string) {
@@ -114,14 +169,13 @@ export const gastosService = {
       .from('gastos')
       .select(`
         *,
-        usuario:usuarios(*),
-        detalles:gasto_detalle(
+        detalles:gastos_detalle(
           *,
-          participante:participantes(*),
-          pagos:pagos(*)
+          usuario:usuarios(nickname, email),
+          pagos(*)
         )
       `)
-      .eq('creado_por', userId)
+      .eq('usuario_id', userId)
       .order('created_at', { ascending: false })
     
     if (error) throw error
@@ -130,21 +184,62 @@ export const gastosService = {
 
   // Crear gasto
   async crearGasto(gasto: GastoCreate, userId: string) {
-    const { data, error } = await supabase
+    // Crear el gasto principal
+    const { data: nuevoGasto, error: gastoError } = await supabase
       .from('gastos')
       .insert({
+        usuario_id: userId,
         descripcion: gasto.descripcion,
-        monto_total: gasto.participantes.reduce((sum, p) => sum + p.monto_total, 0),
+        monto: gasto.monto_total,
         tipo: gasto.tipo,
-        cuotas: gasto.cuotas || 1,
-        descuento: gasto.descuento,
-        creado_por: userId
+        fecha: gasto.fecha,
+        cuotas: gasto.cuotas,
+        descuento: gasto.descuento || 0,
+        tipo_descuento: gasto.tipo_descuento || 'uniforme'
       })
       .select()
       .single()
     
-    if (error) throw error
-    return data as Gasto
+    if (gastoError) throw gastoError
+    
+    // Crear detalles para cada participante y cuota
+    const detalles: GastoDetalleCreate[] = []
+    
+    // Calcular montos de cuotas con descuento aplicado
+    const montosCalculados = calcularMontosConDescuento(
+      gasto.monto_total,
+      gasto.cuotas,
+      gasto.descuento || 0,
+      gasto.tipo_descuento || 'uniforme'
+    )
+    
+    // Iterar primero por cada cuota, luego por cada participante
+    for (let cuota = 1; cuota <= gasto.cuotas; cuota++) {
+      const fechaVencimiento = new Date(gasto.primer_vencimiento)
+      fechaVencimiento.setMonth(fechaVencimiento.getMonth() + (cuota - 1))
+      
+      for (const participante of gasto.participantes) {
+        const montoPorParticipante = Math.round((montosCalculados[cuota - 1] / gasto.participantes.length) * 100) / 100
+        
+        detalles.push({
+          gasto_id: nuevoGasto.id,
+          usuario_id: participante.usuario_id,
+          nombre_participante: participante.usuario_id ? null : participante.nickname,
+          monto: montoPorParticipante,
+          pagado: gasto.pagado || false || montoPorParticipante === 0,
+          vencimiento: fechaVencimiento.toISOString().split('T')[0],
+          numero_cuota: cuota
+        })
+      }
+    }
+    
+    const { error: detallesError } = await supabase
+      .from('gastos_detalle')
+      .insert(detalles)
+    
+    if (detallesError) throw detallesError
+    
+    return nuevoGasto
   },
 
   // Eliminar gasto
@@ -152,28 +247,12 @@ export const gastosService = {
     // Verificar que el gasto pertenece al usuario
     const { data: gasto, error: gastoError } = await supabase
       .from('gastos')
-      .select('id, creado_por')
+      .select('id, usuario_id')
       .eq('id', gastoId)
-      .eq('creado_por', userId)
+      .eq('usuario_id', userId)
       .single()
     
     if (gastoError || !gasto) throw new Error('Gasto no encontrado o sin permisos')
-    
-    // Verificar que no hay pagos asociados
-    const { data: pagos, error: pagosError } = await supabase
-      .from('pagos')
-      .select('id')
-      .in('gasto_detalle_id', 
-        supabase
-          .from('gasto_detalle')
-          .select('id')
-          .eq('gasto_id', gastoId)
-      )
-    
-    if (pagosError) throw pagosError
-    if (pagos && pagos.length > 0) {
-      throw new Error('No se puede eliminar un gasto con pagos asociados')
-    }
     
     // Eliminar gasto (cascade eliminará detalles)
     const { error } = await supabase
@@ -184,6 +263,9 @@ export const gastosService = {
     if (error) throw error
   }
 }
+// Servicios de participantes (ya no se usan con el esquema simplificado)
+// export const participantesService = { ... }
+
 
 export const pagosService = {
   // Obtener pagos del usuario
@@ -192,23 +274,16 @@ export const pagosService = {
       .from('pagos')
       .select(`
         *,
-        gasto_detalle:gasto_detalle(
+        gasto_detalle:gastos_detalle(
           *,
-          gasto:gastos(*),
-          participante:participantes(*)
+          gasto:gastos!inner(
+            id,
+            descripcion,
+            usuario_id
+          )
         )
       `)
-      .in('gasto_detalle_id',
-        supabase
-          .from('gasto_detalle')
-          .select('id')
-          .in('gasto_id',
-            supabase
-              .from('gastos')
-              .select('id')
-              .eq('creado_por', userId)
-          )
-      )
+      .eq('gasto_detalle.gasto.usuario_id', userId)
       .order('created_at', { ascending: false })
     
     if (error) throw error
@@ -216,16 +291,16 @@ export const pagosService = {
   },
 
   // Crear pago
-  async crearPago(gastoDetalleId: string, pago: PagoCreate, userId: string) {
+  async crearPago(pago: PagoCreate, userId: string) {
     // Verificar que el gasto detalle pertenece al usuario
     const { data: detalle, error: detalleError } = await supabase
-      .from('gasto_detalle')
+      .from('gastos_detalle')
       .select(`
         *,
-        gasto:gastos!inner(creado_por)
+        gasto:gastos!inner(usuario_id)
       `)
-      .eq('id', gastoDetalleId)
-      .eq('gasto.creado_por', userId)
+      .eq('id', pago.gasto_detalle_id)
+      .eq('gasto.usuario_id', userId)
       .single()
     
     if (detalleError || !detalle) {
@@ -236,82 +311,46 @@ export const pagosService = {
     const { data, error } = await supabase
       .from('pagos')
       .insert({
-        gasto_detalle_id: gastoDetalleId,
+        gasto_detalle_id: pago.gasto_detalle_id,
+        monto: pago.monto,
         medio_pago: pago.medio_pago,
-        comprobante_url: pago.comprobante_url
+        fecha_pago: pago.fecha_pago,
+        notas: pago.notas
       })
       .select()
       .single()
     
     if (error) throw error
-    
-    // Actualizar estado de pagado en gasto_detalle
-    await supabase
-      .from('gasto_detalle')
-      .update({ pagado: true })
-      .eq('id', gastoDetalleId)
-    
     return data as Pago
   },
 
   // Eliminar pago
   async eliminarPago(pagoId: string, userId: string) {
-    // Verificar que el pago pertenece al usuario
+    // Verificar permisos
     const { data: pago, error: pagoError } = await supabase
       .from('pagos')
       .select(`
         *,
-        gasto_detalle:gasto_detalle!inner(
-          id,
-          gasto:gastos!inner(creado_por)
+        gasto_detalle:gastos_detalle!inner(
+          gasto:gastos!inner(usuario_id)
         )
       `)
       .eq('id', pagoId)
-      .eq('gasto_detalle.gasto.creado_por', userId)
+      .eq('gasto_detalle.gasto.usuario_id', userId)
       .single()
     
     if (pagoError || !pago) {
       throw new Error('Pago no encontrado o sin permisos')
     }
     
-    // Eliminar pago
     const { error } = await supabase
       .from('pagos')
       .delete()
       .eq('id', pagoId)
     
     if (error) throw error
-    
-    // Actualizar estado de pagado en gasto_detalle
-    await supabase
-      .from('gasto_detalle')
-      .update({ pagado: false })
-      .eq('id', pago.gasto_detalle_id)
   }
 }
 
-export const participantesService = {
-  // Obtener participantes del usuario
-  async obtenerParticipantes(userId: string) {
-    const { data, error } = await supabase
-      .from('participantes')
-      .select('*')
-      .or(`usuario_id.eq.${userId},es_registrado.eq.false`)
-      .order('nickname')
-    
-    if (error) throw error
-    return data as Participante[]
-  },
-
-  // Crear participante
-  async crearParticipante(participante: Omit<Participante, 'id' | 'created_at' | 'updated_at'>) {
-    const { data, error } = await supabase
-      .from('participantes')
-      .insert(participante)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data as Participante
-  }
-}
+// Servicios de IOU (ya no se usan con el esquema simplificado)
+// export const iouService = { ... }

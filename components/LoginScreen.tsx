@@ -28,7 +28,6 @@ export default function LoginScreen() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
-  const [username, setUsername] = useState('')
 
   const handleAuth = async () => {
     if (!email || !password) {
@@ -40,22 +39,31 @@ export default function LoginScreen() {
     try {
       if (isSignUp) {
         // Registro
-        if (!firstName || !lastName || !username) {
+        if (!firstName || !lastName) {
           showAlert('Error', 'Por favor completa todos los campos')
           return
         }
 
+        const displayName = `${firstName.trim()} ${lastName.trim()}`
+        
+        console.log('Intentando registro con:', {
+           email: email,
+           nickname: displayName
+         })
+        
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
-              first_name: firstName,
-              last_name: lastName,
-              username: username,
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              nickname: displayName
             }
           }
         })
+        
+        console.log('Respuesta de registro:', { data, error })
 
         if (error) throw error
 
@@ -75,7 +83,20 @@ export default function LoginScreen() {
         if (error) throw error
       }
     } catch (error: any) {
-      showAlert('Error', error.message)
+      console.error('Auth error:', error)
+      let errorMessage = 'Error de conexión con el servidor'
+      
+      if (error.message && error.message.includes('JSON Parse error')) {
+        errorMessage = 'Error de configuración del servidor. Por favor, verifica que la base de datos esté configurada correctamente.'
+      } else if (error.message) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      } else if (error.error_description) {
+        errorMessage = error.error_description
+      }
+      
+      showAlert('Error de Registro', errorMessage + '\n\nSi el problema persiste, contacta al administrador.')
     } finally {
       setLoading(false)
     }
@@ -140,7 +161,7 @@ export default function LoginScreen() {
                   onChangeText={setFirstName}
                   style={styles.input}
                   mode="outlined"
-                  left={<TextInput.Icon icon="account" />}
+                  left={<TextInput.Icon icon="person-outline" />}
                 />
                 <TextInput
                   label="Apellido"
@@ -148,17 +169,9 @@ export default function LoginScreen() {
                   onChangeText={setLastName}
                   style={styles.input}
                   mode="outlined"
-                  left={<TextInput.Icon icon="account" />}
+                  left={<TextInput.Icon icon="person-outline" />}
                 />
-                <TextInput
-                  label="Nombre de usuario"
-                  value={username}
-                  onChangeText={setUsername}
-                  style={styles.input}
-                  mode="outlined"
-                  left={<TextInput.Icon icon="at" />}
-                  autoCapitalize="none"
-                />
+
               </>
             )}
 

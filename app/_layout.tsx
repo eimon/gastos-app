@@ -1,4 +1,7 @@
 // app/_layout.tsx - Layout principal
+// Importar polyfills antes que cualquier otra cosa
+import '../lib/polyfills'
+
 import { useEffect, useState } from 'react'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
@@ -6,12 +9,11 @@ import { Provider as PaperProvider } from 'react-native-paper'
 import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import LoginScreen from '../components/LoginScreen'
-import UserProfileSetup from '../components/UserProfileSetup'
+import Toast from 'react-native-toast-message'
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
-  const [profileComplete, setProfileComplete] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -35,6 +37,7 @@ export default function RootLayout() {
       <PaperProvider>
         <StatusBar style="dark" />
         <LoginScreen />
+        <Toast />
       </PaperProvider>
     )
   }
@@ -42,15 +45,11 @@ export default function RootLayout() {
   return (
     <PaperProvider>
       <StatusBar style="dark" />
-      {!profileComplete && (
-        <UserProfileSetup 
-          user={session.user} 
-          onProfileComplete={() => setProfileComplete(true)} 
-        />
-      )}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="nuevo-gasto/index" />
       </Stack>
+      <Toast />
     </PaperProvider>
   )
 }
