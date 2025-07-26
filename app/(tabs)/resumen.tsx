@@ -113,11 +113,11 @@ export default function ResumenScreen() {
 
     const pagosPorMedio = {
       efectivo: pagosArray
-        .filter(p => p.medio_pago === 'efectivo')
-        .reduce((sum, p) => sum + (p.monto || 0), 0),
-      transferencia: pagosArray
-        .filter(p => p.medio_pago === 'transferencia')
-        .reduce((sum, p) => sum + (p.monto || 0), 0)
+          .filter(p => p.medio_pago === 'Efectivo')
+          .reduce((sum, p) => sum + p.monto, 0),
+        transferencia: pagosArray
+          .filter(p => p.medio_pago === 'Transferencia')
+          .reduce((sum, p) => sum + p.monto, 0)
     }
 
     // Gastos por mes (últimos 6 meses)
@@ -364,14 +364,14 @@ export default function ResumenScreen() {
                   <Chip
                     style={[
                       styles.itemRecenteChip,
-                      { backgroundColor: pago.medio_pago === 'efectivo' ? '#E8F5E8' : '#E3F2FD' }
+                      { backgroundColor: pago.medio_pago === 'Efectivo' ? '#E8F5E8' : '#E3F2FD' }
                     ]}
                     textStyle={[
                       styles.itemRecenteChipText,
-                      { color: pago.medio_pago === 'efectivo' ? '#4CAF50' : '#2196F3' }
+                      { color: pago.medio_pago === 'Efectivo' ? '#4CAF50' : '#2196F3' }
                     ]}
                   >
-                    {pago.medio_pago === 'efectivo' ? 'Efectivo' : pago.medio_pago === 'transferencia' ? 'Transferencia' : pago.medio_pago}
+                    {pago.medio_pago === 'Efectivo' ? 'Efectivo' : pago.medio_pago === 'Transferencia' ? 'Transferencia' : pago.medio_pago}
                   </Chip>
                 </View>
               </View>

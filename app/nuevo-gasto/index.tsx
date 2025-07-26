@@ -412,7 +412,7 @@ export default function NuevoGastoScreen() {
             .insert({
               gasto_detalle_id: detalle.id,
               monto: montoFinal,
-              medio_pago: 'efectivo',
+              medio_pago: 'Efectivo',
               fecha_pago: gastoData.primer_vencimiento
             })
         }

@@ -69,7 +69,7 @@ export interface Pago {
   gasto_detalle_id: string
   monto: number
   fecha_pago: string
-  medio_pago: 'efectivo' | 'transferencia' | 'descuento'
+  medio_pago: 'Efectivo' | 'Transferencia' | 'descuento'
   notas?: string
   created_at: string
   updated_at: string

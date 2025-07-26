@@ -18,10 +18,10 @@
 CREATE TYPE tipo_gasto AS ENUM ('personal', 'compartido');
 
 -- Tipo de descuento
-CREATE TYPE tipo_descuento AS ENUM ('porcentaje', 'monto_fijo');
+CREATE TYPE tipo_descuento AS ENUM ('uniforme', 'prorrateo');
 
 -- Medio de pago
-CREATE TYPE medio_pago AS ENUM ('efectivo', 'transferencia');
+CREATE TYPE medio_pago AS ENUM ('Efectivo', 'Transferencia', 'descuento');
 
 -- =====================================================
 -- 2. TABLAS PRINCIPALES
@@ -44,7 +44,7 @@ CREATE TABLE gastos (
     fecha DATE NOT NULL DEFAULT CURRENT_DATE,
     cuotas INTEGER DEFAULT 1 CHECK (cuotas > 0),
     descuento DECIMAL(10,2) DEFAULT 0 CHECK (descuento >= 0),
-    tipo_descuento tipo_descuento DEFAULT 'monto_fijo',
+    tipo_descuento tipo_descuento DEFAULT 'uniforme',
     tipo tipo_gasto DEFAULT 'personal',
     usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -74,7 +74,7 @@ CREATE TABLE pagos (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     gasto_detalle_id UUID NOT NULL REFERENCES gastos_detalle(id) ON DELETE CASCADE,
     monto DECIMAL(10,2) NOT NULL CHECK (monto > 0),
-    medio_pago medio_pago NOT NULL,
+    medio_pago medio_pago NOT NULL DEFAULT 'Efectivo',
     fecha_pago DATE NOT NULL DEFAULT CURRENT_DATE,
     notas TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -307,7 +307,61 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- =====================================================
--- 9. POLÍTICAS RLS SIMPLIFICADAS (SIN RECURSIÓN)
+-- 9. FUNCIÓN RPC PARA OBTENER GASTOS COMPARTIDOS
+-- =====================================================
+
+-- Función RPC para obtener gastos compartidos con el usuario actual
+CREATE OR REPLACE FUNCTION obtener_gastos_compartidos(usuario_actual_id UUID)
+RETURNS TABLE(
+    gasto_id UUID,
+    descripcion TEXT,
+    monto_total DECIMAL(10,2),
+    fecha DATE,
+    cuotas INTEGER,
+    descuento DECIMAL(10,2),
+    tipo_descuento tipo_descuento,
+    created_at TIMESTAMP WITH TIME ZONE,
+    creador_id UUID,
+    creador_email TEXT,
+    creador_nickname TEXT,
+    mi_monto DECIMAL(10,2),
+    mi_pagado BOOLEAN,
+    mi_vencimiento DATE,
+    mi_numero_cuota INTEGER
+)
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        g.id as gasto_id,
+        g.descripcion,
+        g.monto as monto_total,
+        g.fecha,
+        g.cuotas,
+        g.descuento,
+        g.tipo_descuento,
+        g.created_at,
+        g.usuario_id as creador_id,
+        u.email as creador_email,
+        u.nickname as creador_nickname,
+        gd.monto as mi_monto,
+        gd.pagado as mi_pagado,
+        gd.vencimiento as mi_vencimiento,
+        gd.numero_cuota as mi_numero_cuota
+    FROM public.gastos g
+    INNER JOIN public.gastos_detalle gd ON g.id = gd.gasto_id
+    INNER JOIN public.usuarios u ON g.usuario_id = u.id
+    WHERE gd.usuario_id = usuario_actual_id
+      AND g.usuario_id != usuario_actual_id  -- Excluir gastos creados por el usuario actual
+      AND g.tipo = 'compartido'
+    ORDER BY g.created_at DESC, gd.numero_cuota ASC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- 10. POLÍTICAS RLS SIMPLIFICADAS (SIN RECURSIÓN)
 -- =====================================================
 
 -- Habilitar RLS en todas las tablas
@@ -344,7 +398,13 @@ CREATE POLICY "Usuarios pueden crear gastos" ON gastos
 
 -- Políticas para gastos_detalle (simplificadas)
 CREATE POLICY "Usuarios pueden ver sus detalles" ON gastos_detalle
-    FOR SELECT USING (usuario_id = auth.uid());
+    FOR SELECT USING (
+        usuario_id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM gastos g 
+            WHERE g.id = gasto_id AND g.usuario_id = auth.uid()
+        )
+    );
 
 CREATE POLICY "Usuarios pueden modificar detalles de sus gastos" ON gastos_detalle
     FOR UPDATE USING (
@@ -408,7 +468,7 @@ CREATE POLICY "Usuarios pueden crear pagos para sus gastos" ON pagos
     );
 
 -- =====================================================
--- 10. TRIGGER PARA SINCRONIZACIÓN CON AUTH.USERS
+-- 11. TRIGGER PARA SINCRONIZACIÓN CON AUTH.USERS
 -- =====================================================
 
 -- Función para crear usuario automáticamente cuando se registra en auth.users
@@ -434,7 +494,7 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- =====================================================
--- 11. MENSAJE FINAL
+-- 12. MENSAJE FINAL
 -- =====================================================
 
 SELECT 'Migración completa aplicada exitosamente con políticas RLS corregidas (sin recursión infinita).' as resultado;
