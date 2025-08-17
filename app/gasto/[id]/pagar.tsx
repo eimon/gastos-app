@@ -27,8 +27,11 @@ import { showAlert } from '../../../lib/alerts'
 type MedioPago = 'Efectivo' | 'Transferencia'
 
 export default function PagarGastoScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>()
-  const [gasto, setGasto] = useState<Gasto | null>(null)
+  const { id, participante } = useLocalSearchParams<{ id: string; participante?: string }>()
+  const [gastoBase, setGastoBase] = useState<Gasto | null>(null)
+  const [gastosCuota, setGastosCuota] = useState<Gasto[]>([])
+  const [gastoId, setGastoId] = useState<string>('')
+  const [numeroCuota, setNumeroCuota] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [detalleSeleccionado, setDetalleSeleccionado] = useState<GastoDetalle | null>(null)
@@ -38,30 +41,65 @@ export default function PagarGastoScreen() {
 
   useEffect(() => {
     if (id) {
-      cargarGastoDetalle()
+      // Parsear el ID: gasto_id-cuota-numero_cuota
+      const partes = id.split('-cuota-')
+      if (partes.length === 2) {
+        const gastoIdParsed = partes[0]
+        const numeroCuotaParsed = parseInt(partes[1])
+        setGastoId(gastoIdParsed)
+        setNumeroCuota(numeroCuotaParsed)
+        cargarGastoDetalle(gastoIdParsed, numeroCuotaParsed)
+      }
     }
   }, [id])
 
-  const cargarGastoDetalle = async () => {
+  const cargarGastoDetalle = async (gastoIdParam: string, numeroCuotaParam: number) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user || !id) return
+      if (!user || !gastoIdParam) return
 
-      const { data: gastoData, error } = await supabase
+      // Cargar el gasto base
+      const { data: gastoBaseData, error: gastoBaseError } = await supabase
         .from('gastos')
-        .select(`
-          *,
-          detalles:gastos_detalle(
-            *,
-            usuario:usuarios(*)
-          )
-        `)
-        .eq('id', id)
+        .select('*')
+        .eq('id', gastoIdParam)
         .eq('usuario_id', user.id)
         .single()
 
-      if (error) throw error
-      setGasto(gastoData)
+      if (gastoBaseError) throw gastoBaseError
+      setGastoBase(gastoBaseData)
+
+      // Cargar todos los detalles de la cuota específica
+      const { data: detallesData, error: gastosCuotaError } = await supabase
+        .from('gastos_detalle')
+        .select(`
+          *,
+          gasto:gastos(*),
+          usuario:usuarios(*),
+          pagos(*)
+        `)
+        .eq('gasto_id', gastoIdParam)
+        .eq('numero_cuota', numeroCuotaParam)
+
+      // Convertir detalles a formato de gastos para compatibilidad
+      const gastosCuotaData = detallesData ? [{
+        ...gastoBaseData,
+        detalles: detallesData
+      }] : []
+
+      if (gastosCuotaError) throw gastosCuotaError
+      setGastosCuota(gastosCuotaData || [])
+
+      // Si hay un participante específico, seleccionarlo automáticamente
+      if (participante && gastosCuotaData) {
+        const todosLosDetalles = gastosCuotaData.flatMap(g => g.detalles || [])
+        const detalleParticipante = todosLosDetalles.find(d => 
+          d.usuario?.id === participante || d.nombre_participante === participante
+        )
+        if (detalleParticipante) {
+          seleccionarDetalle(detalleParticipante)
+        }
+      }
     } catch (error: any) {
       console.error('Error cargando detalle del gasto:', error)
       showAlert('Error', 'No se pudo cargar el detalle del gasto')
@@ -79,10 +117,15 @@ export default function PagarGastoScreen() {
   }
 
   const getMontoRestante = (detalle: GastoDetalle) => {
-    // Si ya está marcado como pagado, no hay monto restante
-    if (detalle.pagado) return 0
-    // Si no está pagado, el monto restante es el monto total
-    return detalle.monto
+    // Si ya está marcado como pagado o el monto es 0, no hay monto restante
+    if (detalle.pagado || detalle.monto === 0) return 0
+    
+    // Calcular el total pagado de este detalle
+    const pagos = Array.isArray(detalle.pagos) ? detalle.pagos : []
+    const totalPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0)
+    
+    // El monto restante es el monto total menos lo ya pagado
+    return Math.max(0, detalle.monto - totalPagado)
   }
 
   const registrarPago = async () => {
@@ -130,7 +173,7 @@ export default function PagarGastoScreen() {
 
       showAlert('Éxito', 'Pago registrado correctamente')
       // Navegar de vuelta y forzar recarga de la vista de detalle
-      router.replace(`/gasto/${id}`)
+      router.replace(`/gasto/${gastoId}-cuota-${numeroCuota}`)
     } catch (error: any) {
       console.error('Error registrando pago:', error)
       showAlert('Error', error.message || 'No se pudo registrar el pago')
@@ -153,7 +196,7 @@ export default function PagarGastoScreen() {
     )
   }
 
-  if (!gasto) {
+  if (!gastoBase || gastosCuota.length === 0) {
     return (
       <View style={styles.errorContainer}>
         <Text>No se encontró el gasto</Text>
@@ -161,8 +204,9 @@ export default function PagarGastoScreen() {
     )
   }
 
-  const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
-  const detallesPendientes = detallesArray.filter(d => getMontoRestante(d) > 0)
+  // Obtener todos los detalles de todos los gastos de la cuota
+  const todosLosDetalles = gastosCuota.flatMap(g => g.detalles || [])
+  const detallesPendientes = todosLosDetalles.filter(d => getMontoRestante(d) > 0)
 
   return (
     <View style={styles.container}>
@@ -182,7 +226,10 @@ export default function PagarGastoScreen() {
         <Card style={styles.headerCard}>
           <Card.Content>
             <Text style={styles.gastoInfo}>
-              {gasto.descripcion} - {formatearMonto(gasto.monto || 0)}
+              {gastoBase.descripcion} - Cuota {numeroCuota}
+            </Text>
+            <Text style={styles.gastoInfo}>
+              Total cuota: {formatearMonto(todosLosDetalles.reduce((sum, d) => sum + d.monto, 0))}
             </Text>
           </Card.Content>
         </Card>
@@ -195,39 +242,40 @@ export default function PagarGastoScreen() {
             <Text style={styles.noDataText}>No hay pagos pendientes</Text>
           ) : (
             (() => {
-              // Agrupar detalles por cuota
-              const detallesPorCuota = detallesPendientes.reduce((acc, detalle) => {
-                const cuota = detalle.numero_cuota
-                if (!acc[cuota]) {
-                  acc[cuota] = []
+              // Agrupar detalles por mes
+              const detallesPorMes = detallesPendientes.reduce((acc, detalle) => {
+                const gastoDelDetalle = gastosCuota.find(g => g.detalles?.some(d => d.id === detalle.id))
+                if (gastoDelDetalle) {
+                  const fecha = new Date(gastoDelDetalle.fecha)
+                  const mesAno = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
+                  if (!acc[mesAno]) {
+                    acc[mesAno] = []
+                  }
+                  acc[mesAno].push(detalle)
                 }
-                acc[cuota].push(detalle)
                 return acc
-              }, {} as Record<number, typeof detallesPendientes>)
+              }, {} as Record<string, typeof detallesPendientes>)
 
-              // Ordenar las cuotas
-              const cuotasOrdenadas = Object.keys(detallesPorCuota)
-                .map(Number)
-                .sort((a, b) => a - b)
+              // Ordenar los meses
+              const mesesOrdenados = Object.keys(detallesPorMes).sort()
 
-              return cuotasOrdenadas.map((numeroCuota, cuotaIndex) => {
-                const detallesCuota = detallesPorCuota[numeroCuota]
-                const fechaVencimiento = detallesCuota[0]?.vencimiento
+              return mesesOrdenados.map((mesAno, mesIndex) => {
+                const detallesMes = detallesPorMes[mesAno]
+                const [ano, mes] = mesAno.split('-')
+                const nombreMes = new Date(parseInt(ano), parseInt(mes) - 1).toLocaleDateString('es-AR', { 
+                  month: 'long', 
+                  year: 'numeric' 
+                })
                 
                 return (
-                  <View key={`cuota-${numeroCuota}`}>
-                    {/* Header de la cuota */}
+                  <View key={`mes-${mesAno}`}>
+                    {/* Header del mes */}
                     <View style={styles.cuotaHeader}>
-                      <Text style={styles.cuotaTitle}>Cuota {numeroCuota}</Text>
-                      {fechaVencimiento && (
-                        <Text style={styles.cuotaVencimiento}>
-                          Vence: {new Date(fechaVencimiento).toLocaleDateString('es-AR')}
-                        </Text>
-                      )}
+                      <Text style={styles.cuotaTitle}>{nombreMes}</Text>
                     </View>
                     
-                    {/* Participantes de la cuota */}
-                    {detallesCuota.map((detalle, detalleIndex) => {
+                    {/* Participantes del mes */}
+                    {detallesMes.map((detalle, detalleIndex) => {
                       const montoRestante = getMontoRestante(detalle)
                       const isSelected = detalleSeleccionado?.id === detalle.id
                       
@@ -249,13 +297,13 @@ export default function PagarGastoScreen() {
                               isSelected && styles.detalleItemSelected
                             ]}
                           />
-                          {detalleIndex < detallesCuota.length - 1 && <Divider style={styles.participanteDivider} />}
+                          {detalleIndex < detallesMes.length - 1 && <Divider style={styles.participanteDivider} />}
                         </View>
                       )
                     })}
                     
-                    {/* Separador entre cuotas */}
-                    {cuotaIndex < cuotasOrdenadas.length - 1 && (
+                    {/* Separador entre meses */}
+                    {mesIndex < mesesOrdenados.length - 1 && (
                       <Divider style={styles.cuotaDivider} />
                     )}
                   </View>

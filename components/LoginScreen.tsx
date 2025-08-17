@@ -24,6 +24,7 @@ import { showAlert } from '../lib/alerts'
 export default function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
   const [firstName, setFirstName] = useState('')
@@ -39,8 +40,13 @@ export default function LoginScreen() {
     try {
       if (isSignUp) {
         // Registro
-        if (!firstName || !lastName) {
+        if (!firstName || !lastName || !confirmPassword) {
           showAlert('Error', 'Por favor completa todos los campos')
+          return
+        }
+
+        if (password !== confirmPassword) {
+          showAlert('Error', 'Las contraseñas no coinciden')
           return
         }
 
@@ -161,7 +167,7 @@ export default function LoginScreen() {
                   onChangeText={setFirstName}
                   style={styles.input}
                   mode="outlined"
-                  left={<TextInput.Icon icon="person-outline" />}
+                  left={<TextInput.Icon icon="account" />}
                 />
                 <TextInput
                   label="Apellido"
@@ -169,7 +175,7 @@ export default function LoginScreen() {
                   onChangeText={setLastName}
                   style={styles.input}
                   mode="outlined"
-                  left={<TextInput.Icon icon="person-outline" />}
+                  left={<TextInput.Icon icon="account" />}
                 />
 
               </>
@@ -195,6 +201,18 @@ export default function LoginScreen() {
               secureTextEntry
               left={<TextInput.Icon icon="lock" />}
             />
+
+            {isSignUp && (
+              <TextInput
+                label="Confirmar Contraseña"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                style={styles.input}
+                mode="outlined"
+                secureTextEntry
+                left={<TextInput.Icon icon="lock-check" />}
+              />
+            )}
 
             <Button
               mode="contained"

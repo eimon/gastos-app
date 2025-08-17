@@ -1,4 +1,4 @@
-// app/(tabs)/resumen.tsx - Pantalla de resumen y estadísticas
+// app/(tabs)/resumen.tsx - Vista unificada de resumen mensual y pagos
 import React, { useState, useEffect } from 'react'
 import {
   View,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   RefreshControl,
   Dimensions,
+  TouchableOpacity,
 } from 'react-native'
 import {
   Card,
@@ -14,61 +15,100 @@ import {
   Paragraph,
   Button,
   Chip,
+  IconButton,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
-import { supabase, gastosService, pagosService, Gasto, Pago } from '../../lib/supabase'
+import { supabase, gastosService, pagosService, Gasto, Pago, TipoGasto } from '../../lib/supabase'
 import { showAlert } from '../../lib/alerts'
+import { useFocusEffect } from '@react-navigation/native'
+import { PieChart } from 'react-native-chart-kit'
 
 const { width } = Dimensions.get('window')
 
-interface EstadisticasResumen {
+interface EstadisticasMes {
+  gastosFijos: number
+  gastosVariables: number
+  gastosPorPagar: number
+  gastosAdeudados: number
   totalGastos: number
-  totalPagado: number
-  totalPendiente: number
-  gastosPersonales: number
-  gastosCompartidos: number
-  pagosPorMedio: {
-    efectivo: number
-    transferencia: number
-  }
-  gastosPorMes: { [key: string]: number }
 }
 
+interface PagoMes {
+  id: string
+  descripcion: string
+  monto: number
+  fecha: string
+  medio_pago: string
+  participante: string
+}
+
+const meses = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+]
+
 export default function ResumenScreen() {
-  const [gastos, setGastos] = useState<Gasto[]>([])
-  const [pagos, setPagos] = useState<Pago[]>([])
-  const [estadisticas, setEstadisticas] = useState<EstadisticasResumen>({
-    totalGastos: 0,
-    totalPagado: 0,
-    totalPendiente: 0,
-    gastosPersonales: 0,
-    gastosCompartidos: 0,
-    pagosPorMedio: {
-      efectivo: 0,
-      transferencia: 0
-    },
-    gastosPorMes: {}
-  })
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [mesActual, setMesActual] = useState(new Date().getMonth() + 1)
+  const [añoActual, setAñoActual] = useState(new Date().getFullYear())
+  const [estadisticas, setEstadisticas] = useState<EstadisticasMes>({
+    gastosFijos: 0,
+    gastosVariables: 0,
+    gastosPorPagar: 0,
+    gastosAdeudados: 0,
+    totalGastos: 0
+  })
+  const [pagosMes, setPagosMes] = useState<PagoMes[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
     cargarDatos()
-  }, [])
+  }, [mesActual, añoActual])
+
+  useFocusEffect(
+    React.useCallback(() => {
+      cargarDatos()
+    }, [])
+  )
 
   const cargarDatos = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user || !user.id) {
+        console.log('Usuario no autenticado')
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
 
-      const [gastosData, pagosData] = await Promise.all([
-        gastosService.obtenerGastos(user.id),
-        pagosService.obtenerPagos(user.id)
-      ])
+      setCurrentUserId(user.id)
+      
+      // Cargar gastos del mes para estadísticas
+      const gastosData = await gastosService.obtenerGastosCuotasUnificadas(user.id, mesActual, añoActual)
+      
+      // Cargar pagos del mes
+      const pagosData = await pagosService.obtenerPagos(user.id)
+      const pagosFiltrados = pagosData.filter(pago => {
+        const fechaPago = new Date(pago.fecha_pago)
+        return fechaPago.getMonth() + 1 === mesActual && fechaPago.getFullYear() === añoActual
+      })
 
-      setGastos(gastosData)
-      setPagos(pagosData)
-      calcularEstadisticas(gastosData, pagosData)
+      // Calcular estadísticas
+      const stats = calcularEstadisticas(gastosData, user.id)
+      setEstadisticas(stats)
+      
+      // Formatear pagos para mostrar
+      const pagosFormateados = pagosFiltrados.map(pago => ({
+        id: pago.id,
+        descripcion: pago.gasto?.descripcion || 'Gasto eliminado',
+        monto: pago.monto,
+        fecha: pago.fecha_pago,
+        medio_pago: pago.medio_pago,
+        participante: pago.participante?.nickname || pago.participante?.email || 'Usuario'
+      }))
+      
+      setPagosMes(pagosFormateados)
     } catch (error) {
       console.error('Error cargando datos:', error)
       showAlert('Error', 'No se pudieron cargar los datos')
@@ -78,310 +118,239 @@ export default function ResumenScreen() {
     }
   }
 
+  const calcularEstadisticas = (gastos: any[], userId: string): EstadisticasMes => {
+    let gastosFijos = 0
+    let gastosVariables = 0
+    let gastosPorPagar = 0
+    let gastosAdeudados = 0
+
+    gastos.forEach(gasto => {
+      // Solo considerar gastos propios del usuario
+      const esGastoPropio = gasto.creador_id === userId
+      
+      if (esGastoPropio) {
+        const montoTotal = gasto.monto_total || 0
+        
+        if (gasto.tipo === 'fijo') {
+          gastosFijos += montoTotal
+        } else {
+          gastosVariables += montoTotal
+        }
+        
+        // Calcular gastos por pagar (cuotas no pagadas completamente)
+        const progreso = gasto.progreso_pago || 0
+        if (progreso < 100) {
+          gastosPorPagar += montoTotal * (1 - progreso / 100)
+        }
+      } else {
+        // Para gastos de otros, calcular lo que nos adeudan
+        const montoUsuario = gasto.participantes?.find((p: any) => p.usuario_id === userId)?.monto || 0
+        const pagadoUsuario = gasto.participantes?.find((p: any) => p.usuario_id === userId)?.monto_pagado || 0
+        
+        if (montoUsuario > pagadoUsuario) {
+          gastosAdeudados += (montoUsuario - pagadoUsuario)
+        }
+      }
+    })
+
+    return {
+      gastosFijos,
+      gastosVariables,
+      gastosPorPagar,
+      gastosAdeudados,
+      totalGastos: gastosFijos + gastosVariables
+    }
+  }
+
   const onRefresh = () => {
     setRefreshing(true)
     cargarDatos()
   }
 
-  // Función para calcular el saldo actual de un detalle basado en los pagos
-  const calcularSaldoDetalle = (detalle: GastoDetalle) => {
-    if (!detalle.pagos || !Array.isArray(detalle.pagos)) return 0
-    return detalle.pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0)
+  const navegarMes = (direccion: 'anterior' | 'siguiente') => {
+    if (direccion === 'anterior') {
+      if (mesActual === 1) {
+        setMesActual(12)
+        setAñoActual(añoActual - 1)
+      } else {
+        setMesActual(mesActual - 1)
+      }
+    } else {
+      if (mesActual === 12) {
+        setMesActual(1)
+        setAñoActual(añoActual + 1)
+      } else {
+        setMesActual(mesActual + 1)
+      }
+    }
   }
 
-  const calcularEstadisticas = (gastosData: Gasto[], pagosData: Pago[]) => {
-    // Asegurar que los datos sean arrays
-    const gastosArray = Array.isArray(gastosData) ? gastosData : []
-    const pagosArray = Array.isArray(pagosData) ? pagosData : []
-    
-    const totalGastos = gastosArray.reduce((sum, gasto) => sum + (gasto.monto || 0), 0)
-    
-    // Calcular total pagado basado en la columna 'pagado'
-    const totalPagado = gastosArray.reduce((sum, gasto) => {
-      const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
-      return sum + detallesArray.filter(d => d.pagado).reduce((detSum, d) => detSum + d.monto, 0)
-    }, 0)
-    
-    // Calcular total pendiente basado en gastos_detalle no pagados
-    const totalPendiente = gastosArray.reduce((sum, gasto) => {
-      const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
-      return sum + detallesArray.filter(d => !d.pagado).reduce((detSum, d) => detSum + d.monto, 0)
-    }, 0)
-
-    const gastosPersonales = gastosArray.filter(g => g.tipo === 'personal').length
-    const gastosCompartidos = gastosArray.filter(g => g.tipo === 'compartido').length
-
-    const pagosPorMedio = {
-      efectivo: pagosArray
-          .filter(p => p.medio_pago === 'Efectivo')
-          .reduce((sum, p) => sum + p.monto, 0),
-        transferencia: pagosArray
-          .filter(p => p.medio_pago === 'Transferencia')
-          .reduce((sum, p) => sum + p.monto, 0)
-    }
-
-    // Gastos por mes (últimos 6 meses)
-    const gastosPorMes: { [key: string]: number } = {}
-    const ahora = new Date()
-    
-    for (let i = 5; i >= 0; i--) {
-      const fecha = new Date(ahora.getFullYear(), ahora.getMonth() - i, 1)
-      const mesKey = fecha.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })
-      gastosPorMes[mesKey] = 0
-    }
-
-    gastosArray.forEach(gasto => {
-      const fechaGasto = new Date(gasto.created_at)
-      const mesKey = fechaGasto.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })
-      if (gastosPorMes.hasOwnProperty(mesKey)) {
-        gastosPorMes[mesKey] += (gasto.monto || 0)
-      }
-    })
-
-    setEstadisticas({
-      totalGastos,
-      totalPagado,
-      totalPendiente,
-      gastosPersonales,
-      gastosCompartidos,
-      pagosPorMedio,
-      gastosPorMes
-    })
+  const irMesActual = () => {
+    const hoy = new Date()
+    setMesActual(hoy.getMonth() + 1)
+    setAñoActual(hoy.getFullYear())
   }
 
   const formatearMonto = (monto: number) => {
-    // Verificar si el monto es válido
-    if (isNaN(monto) || monto === null || monto === undefined) {
-      return '$0,00'
-    }
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
-      currency: 'ARS'
+      currency: 'ARS',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
     }).format(monto)
   }
 
-  const calcularPorcentajePagado = () => {
-    if (estadisticas.totalGastos === 0) return 0
-    return (estadisticas.totalPagado / estadisticas.totalGastos) * 100
+  const formatearFecha = (fecha: string) => {
+    return new Date(fecha).toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: '2-digit'
+    })
   }
 
-  const obtenerGastosRecientes = () => {
-    const gastosArray = Array.isArray(gastos) ? gastos : []
-    return gastosArray
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 5)
+  const obtenerColorMedioPago = (medio: string) => {
+    switch (medio) {
+      case 'efectivo': return '#4CAF50'
+      case 'transferencia': return '#2196F3'
+      default: return '#666'
+    }
   }
 
-  const obtenerPagosRecientes = () => {
-    const pagosArray = Array.isArray(pagos) ? pagos : []
-    return pagosArray
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 5)
-  }
+  // Datos para el gráfico circular
+  const datosGrafico = [
+    {
+      name: 'Gastos Fijos',
+      population: estadisticas.gastosFijos,
+      color: '#FF6B6B',
+      legendFontColor: '#333',
+      legendFontSize: 14,
+    },
+    {
+      name: 'Gastos Variables',
+      population: estadisticas.gastosVariables,
+      color: '#4ECDC4',
+      legendFontColor: '#333',
+      legendFontSize: 14,
+    },
+  ]
 
-  const porcentajePagado = calcularPorcentajePagado()
-  const gastosRecientes = obtenerGastosRecientes()
-  const pagosRecientes = obtenerPagosRecientes()
+  const chartConfig = {
+    color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+  }
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
-      {/* Resumen Principal */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.cardTitle}>Resumen General</Title>
-          <View style={styles.resumenGrid}>
-            <View style={styles.resumenItem}>
-              <Text style={styles.resumenNumero}>{formatearMonto(estadisticas.totalGastos)}</Text>
-              <Text style={styles.resumenLabel}>Total Gastos</Text>
-            </View>
-            <View style={styles.resumenItem}>
-              <Text style={[styles.resumenNumero, { color: '#4CAF50' }]}>
-                {formatearMonto(estadisticas.totalPagado)}
-              </Text>
-              <Text style={styles.resumenLabel}>Total Pagado</Text>
-            </View>
-            <View style={styles.resumenItem}>
-              <Text style={[styles.resumenNumero, { color: '#FF9800' }]}>
-                {formatearMonto(estadisticas.totalPendiente)}
-              </Text>
-              <Text style={styles.resumenLabel}>Pendiente</Text>
-            </View>
-            <View style={styles.resumenItem}>
-              <Text style={[styles.resumenNumero, { color: '#2196F3' }]}>
-                {Math.round(porcentajePagado)}%
-              </Text>
-              <Text style={styles.resumenLabel}>Completado</Text>
-            </View>
-          </View>
-        </Card.Content>
-      </Card>
-
-      {/* Progreso de Pagos */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.cardTitle}>Progreso de Pagos</Title>
-          <View style={styles.progresoContainer}>
-            <View style={styles.progresoBar}>
-              <View
-                style={[
-                  styles.progresoFill,
-                  {
-                    width: `${porcentajePagado}%`,
-                    backgroundColor: porcentajePagado === 100 ? '#4CAF50' : '#2196F3'
-                  }
-                ]}
-              />
-            </View>
-            <Text style={styles.progresoText}>
-              {Math.round(porcentajePagado)}% de los gastos están pagados
+    <View style={styles.container}>
+      {/* Header con navegación mensual */}
+      <View style={styles.header}>
+        <View style={styles.selectorMes}>
+          <IconButton
+            icon="chevron-left"
+            size={24}
+            onPress={() => navegarMes('anterior')}
+            style={styles.navegacionButton}
+          />
+          <TouchableOpacity style={styles.mesContainer} onPress={irMesActual}>
+            <Text style={styles.mesTexto}>
+              {meses[mesActual - 1]} {añoActual}
             </Text>
-          </View>
-        </Card.Content>
-      </Card>
+          </TouchableOpacity>
+          <IconButton
+            icon="chevron-right"
+            size={24}
+            onPress={() => navegarMes('siguiente')}
+            style={styles.navegacionButton}
+          />
+        </View>
+      </View>
 
-      {/* Distribución por Tipo */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.cardTitle}>Distribución por Tipo</Title>
-          <View style={styles.distribucionContainer}>
-            <View style={styles.distribucionItem}>
-              <View style={styles.distribucionIcono}>
-                <Ionicons name="person-outline" size={24} color="#4CAF50" />
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* Gráfico circular */}
+        {estadisticas.totalGastos > 0 && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Title style={styles.cardTitle}>Distribución de Gastos</Title>
+              <View style={styles.chartContainer}>
+                <PieChart
+                  data={datosGrafico}
+                  width={width - 64}
+                  height={200}
+                  chartConfig={chartConfig}
+                  accessor="population"
+                  backgroundColor="transparent"
+                  paddingLeft="15"
+                  absolute
+                />
               </View>
-              <View style={styles.distribucionInfo}>
-                <Text style={styles.distribucionNumero}>{estadisticas.gastosPersonales}</Text>
-                <Text style={styles.distribucionLabel}>Gastos Personales</Text>
-              </View>
-            </View>
-            <View style={styles.distribucionItem}>
-              <View style={styles.distribucionIcono}>
-                <Ionicons name="people" size={24} color="#FF9800" />
-              </View>
-              <View style={styles.distribucionInfo}>
-                <Text style={styles.distribucionNumero}>{estadisticas.gastosCompartidos}</Text>
-                <Text style={styles.distribucionLabel}>Gastos Compartidos</Text>
-              </View>
-            </View>
-          </View>
-        </Card.Content>
-      </Card>
+            </Card.Content>
+          </Card>
+        )}
 
-      {/* Pagos por Medio */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.cardTitle}>Pagos por Medio</Title>
-          <View style={styles.distribucionContainer}>
-            <View style={styles.distribucionItem}>
-              <View style={styles.distribucionIcono}>
-                <Ionicons name="cash" size={24} color="#4CAF50" />
-              </View>
-              <View style={styles.distribucionInfo}>
-                <Text style={styles.distribucionNumero}>
-                  {formatearMonto(estadisticas.pagosPorMedio.efectivo)}
+        {/* Estadísticas */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Title style={styles.cardTitle}>Resumen del Mes</Title>
+            <View style={styles.estadisticasGrid}>
+              <View style={styles.estadisticaItem}>
+                <Text style={styles.estadisticaNumero}>
+                  {formatearMonto(estadisticas.gastosPorPagar)}
                 </Text>
-                <Text style={styles.distribucionLabel}>Efectivo</Text>
+                <Text style={styles.estadisticaLabel}>Por Pagar</Text>
               </View>
-            </View>
-            <View style={styles.distribucionItem}>
-              <View style={styles.distribucionIcono}>
-                <Ionicons name="card" size={24} color="#2196F3" />
-              </View>
-              <View style={styles.distribucionInfo}>
-                <Text style={styles.distribucionNumero}>
-                  {formatearMonto(estadisticas.pagosPorMedio.transferencia)}
+              <View style={styles.estadisticaItem}>
+                <Text style={styles.estadisticaNumero}>
+                  {formatearMonto(estadisticas.gastosAdeudados)}
                 </Text>
-                <Text style={styles.distribucionLabel}>Transferencia</Text>
+                <Text style={styles.estadisticaLabel}>Me Adeudan</Text>
               </View>
             </View>
-          </View>
-        </Card.Content>
-      </Card>
+          </Card.Content>
+        </Card>
 
-      {/* Gastos Recientes */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.cardTitle}>Gastos Recientes</Title>
-          {gastosRecientes.length > 0 ? (
-            gastosRecientes.map((gasto, index) => (
-              <View key={gasto.id} style={styles.itemReciente}>
-                <View style={styles.itemRecenteInfo}>
-                  <Text style={styles.itemRecenteTitulo}>
-                    {gasto.descripcion || 'Sin descripción'}
-                  </Text>
-                  <Text style={styles.itemRecenteFecha}>
-                    {new Date(gasto.created_at).toLocaleDateString('es-AR')}
-                  </Text>
+        {/* Listado de pagos */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Title style={styles.cardTitle}>Pagos del Mes ({pagosMes.length})</Title>
+            {pagosMes.length > 0 ? (
+              pagosMes.map((pago) => (
+                <View key={pago.id} style={styles.pagoItem}>
+                  <View style={styles.pagoInfo}>
+                    <Text style={styles.pagoDescripcion} numberOfLines={1}>
+                      {pago.descripcion}
+                    </Text>
+                    <Text style={styles.pagoParticipante}>
+                      {pago.participante}
+                    </Text>
+                  </View>
+                  <View style={styles.pagoMeta}>
+                    <Text style={styles.pagoMonto}>
+                      {formatearMonto(pago.monto)}
+                    </Text>
+                    <View style={styles.pagoDetalles}>
+                      <Chip
+                        style={[styles.medioChip, { backgroundColor: obtenerColorMedioPago(pago.medio_pago) }]}
+                        textStyle={styles.medioChipText}
+                      >
+                        {pago.medio_pago === 'efectivo' ? 'EF' : 'TR'}
+                      </Chip>
+                      <Text style={styles.pagoFecha}>
+                        {formatearFecha(pago.fecha)}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.itemRecenteMonto}>
-                  <Text style={styles.itemRecenteMontoText}>
-                    {formatearMonto(gasto.monto)}
-                  </Text>
-                  <Chip
-                    style={[
-                      styles.itemRecenteChip,
-                      { backgroundColor: gasto.tipo === 'personal' ? '#E8F5E8' : '#FFF3E0' }
-                    ]}
-                    textStyle={[
-                      styles.itemRecenteChipText,
-                      { color: gasto.tipo === 'personal' ? '#4CAF50' : '#FF9800' }
-                    ]}
-                  >
-                    {gasto.tipo === 'personal' ? 'Personal' : 'Compartido'}
-                  </Chip>
-                </View>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.emptyText}>No hay gastos recientes</Text>
-          )}
-        </Card.Content>
-      </Card>
-
-      {/* Pagos Recientes */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.cardTitle}>Pagos Recientes</Title>
-          {pagosRecientes.length > 0 ? (
-            pagosRecientes.map((pago, index) => (
-              <View key={pago.id} style={styles.itemReciente}>
-                <View style={styles.itemRecenteInfo}>
-                  <Text style={styles.itemRecenteTitulo}>
-                    {pago.gasto_detalle?.gasto?.descripcion || 'Sin descripción'}
-                  </Text>
-                  <Text style={styles.itemRecenteFecha}>
-                    {new Date(pago.created_at).toLocaleDateString('es-AR')}
-                  </Text>
-                </View>
-                <View style={styles.itemRecenteMonto}>
-                  <Text style={styles.itemRecenteMontoText}>
-                    {formatearMonto(pago.monto)}
-                  </Text>
-                  <Chip
-                    style={[
-                      styles.itemRecenteChip,
-                      { backgroundColor: pago.medio_pago === 'Efectivo' ? '#E8F5E8' : '#E3F2FD' }
-                    ]}
-                    textStyle={[
-                      styles.itemRecenteChipText,
-                      { color: pago.medio_pago === 'Efectivo' ? '#4CAF50' : '#2196F3' }
-                    ]}
-                  >
-                    {pago.medio_pago === 'Efectivo' ? 'Efectivo' : pago.medio_pago === 'Transferencia' ? 'Transferencia' : pago.medio_pago}
-                  </Chip>
-                </View>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.emptyText}>No hay pagos recientes</Text>
-          )}
-        </Card.Content>
-      </Card>
-    </ScrollView>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>No hay pagos registrados este mes</Text>
+            )}
+          </Card.Content>
+        </Card>
+      </ScrollView>
+    </View>
   )
 }
 
@@ -389,6 +358,35 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  header: {
+    padding: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  selectorMes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    paddingVertical: 4,
+  },
+  navegacionButton: {
+    margin: 0,
+  },
+  mesContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  mesTexto: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2196F3',
+  },
+  scrollView: {
+    flex: 1,
   },
   card: {
     margin: 16,
@@ -401,115 +399,79 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     color: '#333',
   },
-  resumenGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  resumenItem: {
-    width: '48%',
+  chartContainer: {
     alignItems: 'center',
-    marginBottom: 16,
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
   },
-  resumenNumero: {
-    fontSize: 20,
+  estadisticasGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  estadisticaItem: {
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  estadisticaNumero: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#2196F3',
     marginBottom: 4,
   },
-  resumenLabel: {
+  estadisticaLabel: {
     fontSize: 12,
     color: '#666',
     textAlign: 'center',
   },
-  progresoContainer: {
-    marginBottom: 8,
-  },
-  progresoBar: {
-    height: 8,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 4,
-    marginBottom: 8,
-  },
-  progresoFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  progresoText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-  distribucionContainer: {
-    gap: 16,
-  },
-  distribucionItem: {
+  pagoItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-  },
-  distribucionIcono: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  distribucionInfo: {
-    flex: 1,
-  },
-  distribucionNumero: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  distribucionLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  itemReciente: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  itemRecenteInfo: {
+  pagoInfo: {
     flex: 1,
+    marginRight: 12,
   },
-  itemRecenteTitulo: {
+  pagoDescripcion: {
     fontSize: 14,
     fontWeight: '500',
     color: '#333',
     marginBottom: 2,
   },
-  itemRecenteFecha: {
+  pagoParticipante: {
     fontSize: 12,
     color: '#666',
   },
-  itemRecenteMonto: {
+  pagoMeta: {
     alignItems: 'flex-end',
   },
-  itemRecenteMontoText: {
-    fontSize: 14,
+  pagoMonto: {
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#4CAF50',
     marginBottom: 4,
   },
-  itemRecenteChip: {
-    height: 24,
+  pagoDetalles: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  itemRecenteChipText: {
+  medioChip: {
+    height: 24,
+    minWidth: 32,
+  },
+  medioChipText: {
+    color: 'white',
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  pagoFecha: {
+    fontSize: 11,
+    color: '#666',
   },
   emptyText: {
     textAlign: 'center',

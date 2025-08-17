@@ -23,53 +23,86 @@ import {
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
-import { supabase, gastosService, Gasto, GastoDetalle } from '../../lib/supabase'
-import { showAlert } from '../../lib/alerts'
+import { supabase, gastosService, pagosService, Gasto, GastoDetalle, GastoCuotaUnificada } from '../../lib/supabase'
+import { showAlert, showSuccessToast } from '../../lib/alerts'
 
 export default function GastoDetalleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  const [gasto, setGasto] = useState<Gasto | null>(null)
+  const [gastosCuota, setGastosCuota] = useState<Gasto[]>([])
+  const [gastoBase, setGastoBase] = useState<Gasto | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [gastoId, setGastoId] = useState<string>('')
+  const [numeroCuota, setNumeroCuota] = useState<number>(1)
 
 
   useEffect(() => {
     if (id) {
-      cargarGastoDetalle()
+      // Parsear el ID que viene en formato: gasto_id-cuota-numero_cuota
+      const parts = id.split('-cuota-')
+      if (parts.length === 2) {
+        setGastoId(parts[0])
+        setNumeroCuota(parseInt(parts[1]))
+        cargarGastoDetalle(parts[0], parseInt(parts[1]))
+      }
     }
   }, [id])
 
   // Recargar datos cuando la pantalla se enfoque (útil al volver del registro de pago)
   useFocusEffect(
     useCallback(() => {
-      if (id) {
-        cargarGastoDetalle()
+      if (gastoId && numeroCuota) {
+        cargarGastoDetalle(gastoId, numeroCuota)
       }
-    }, [id])
+    }, [gastoId, numeroCuota])
   )
 
-  const cargarGastoDetalle = async () => {
+  const cargarGastoDetalle = async (gastoIdParam: string, numeroCuotaParam: number) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user || !id) return
+      if (!user || !gastoIdParam) return
 
-      // Obtener el gasto con sus detalles
-      const { data: gastoData, error } = await supabase
+      // Obtener el gasto base
+      const { data: gastoBaseData, error: gastoError } = await supabase
         .from('gastos')
-        .select(`
-          *,
-          detalles:gastos_detalle(
-            *,
-            usuario:usuarios(*),
-            pagos(*)
-          )
-        `)
-        .eq('id', id)
-        .eq('usuario_id', user.id)
+        .select('*')
+        .eq('id', gastoIdParam)
         .single()
 
-      if (error) throw error
-      setGasto(gastoData)
+      if (gastoError) throw gastoError
+      setGastoBase(gastoBaseData)
+
+      // Obtener todos los gastos de esta cuota específica
+      const { data: detallesData, error: detallesError } = await supabase
+        .from('gastos_detalle')
+        .select(`
+          *,
+          gasto:gastos(*),
+          usuario:usuarios(*),
+          pagos(*)
+        `)
+        .eq('gasto_id', gastoIdParam)
+        .eq('numero_cuota', numeroCuotaParam)
+        .not('gasto', 'is', null)
+
+      if (detallesError) throw detallesError
+
+      // Convertir detalles a gastos individuales agrupados por mes
+      const gastosIndividuales = detallesData.map(detalle => {
+        const gastoBase = detalle.gasto!
+        return {
+          ...gastoBase,
+          monto: detalle.monto,
+          fecha: detalle.vencimiento,
+          numero_cuota: detalle.numero_cuota,
+          detalles: [{
+            ...detalle,
+            gasto: undefined // Evitar referencia circular
+          }]
+        }
+      })
+
+      setGastosCuota(gastosIndividuales)
     } catch (error: any) {
       console.error('Error cargando detalle del gasto:', error)
       showAlert('Error', 'No se pudo cargar el detalle del gasto')
@@ -82,7 +115,9 @@ export default function GastoDetalleScreen() {
 
   const onRefresh = () => {
     setRefreshing(true)
-    cargarGastoDetalle()
+    if (gastoId && numeroCuota) {
+      cargarGastoDetalle(gastoId, numeroCuota)
+    }
   }
 
   const formatearMonto = (monto: number) => {
@@ -114,31 +149,50 @@ export default function GastoDetalleScreen() {
   }
 
   const calcularProgresoPago = () => {
-    if (!gasto?.detalles) return 0
-    const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
-    if (detallesArray.length === 0) return 0
+    if (gastosCuota.length === 0) return 0
     
-    const totalMonto = detallesArray.reduce((sum, d) => sum + d.monto, 0)
-    const montoPagado = detallesArray.filter(d => d.pagado).reduce((sum, d) => sum + d.monto, 0)
+    const todosLosDetalles = gastosCuota.flatMap(gasto => 
+      Array.isArray(gasto.detalles) ? gasto.detalles : []
+    )
     
-    return totalMonto > 0 ? (montoPagado / totalMonto) * 100 : 0
+    if (todosLosDetalles.length === 0) return 0
+    
+    const totalMonto = todosLosDetalles.reduce((sum, d) => sum + d.monto, 0)
+    
+    // Considerar gastos con monto 0 como pagados al 100%
+    const montoPagado = todosLosDetalles.reduce((sum, d) => {
+      if (d.monto === 0) {
+        // Los gastos con monto 0 se consideran pagados completamente
+        return sum + 0 // No contribuyen al monto pagado pero tampoco al total
+      }
+      return sum + (d.pagado ? d.monto : 0)
+    }, 0)
+    
+    return totalMonto > 0 ? (montoPagado / totalMonto) * 100 : 100
   }
 
-  const agruparPorCuotas = (detalles: GastoDetalle[]) => {
-    if (!Array.isArray(detalles)) return {}
+  const agruparPorMes = (gastos: Gasto[]) => {
+    if (!Array.isArray(gastos)) return {}
     
-    return detalles.reduce((grupos, detalle) => {
-      const cuota = detalle.numero_cuota || 1
-      if (!grupos[cuota]) {
-        grupos[cuota] = []
+    return gastos.reduce((grupos, gasto) => {
+      const fecha = new Date(gasto.fecha)
+      const mesAno = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
+      const nombreMes = fecha.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+      
+      if (!grupos[mesAno]) {
+        grupos[mesAno] = {
+          nombre: nombreMes,
+          gastos: []
+        }
       }
-      grupos[cuota].push(detalle)
+      grupos[mesAno].gastos.push(gasto)
       return grupos
-    }, {} as Record<number, GastoDetalle[]>)
+    }, {} as Record<string, { nombre: string; gastos: Gasto[] }>)
   }
 
   const getEstadoPago = (detalle: GastoDetalle) => {
-    if (detalle.pagado) {
+    // Los gastos con monto 0 se consideran pagados automáticamente
+    if (detalle.pagado || detalle.monto === 0) {
       return { estado: 'Pagado', color: '#4CAF50', icon: 'check-circle' }
     } else {
       return { estado: 'Pendiente', color: '#f44336', icon: 'close-circle' }
@@ -149,11 +203,13 @@ export default function GastoDetalleScreen() {
 
   // Función para calcular balance neto de todos los participantes
   const calcularBalancesNetos = () => {
-    if (!gasto?.detalles) return []
+    if (gastosCuota.length === 0) return []
     
-    const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
+    const todosLosDetalles = gastosCuota.flatMap(gasto => 
+      Array.isArray(gasto.detalles) ? gasto.detalles : []
+    )
     
-    return detallesArray.map(detalle => {
+    return todosLosDetalles.map(detalle => {
       const saldoPagado = getSaldoPagado(detalle)
       const montoTotal = detalle.monto
       const balance = saldoPagado - montoTotal // Positivo = acreedor, Negativo = deudor
@@ -214,7 +270,7 @@ export default function GastoDetalleScreen() {
     )
   }
 
-  if (!gasto) {
+  if (!gastoBase || gastosCuota.length === 0) {
     return (
       <View style={styles.errorContainer}>
         <Text>No se encontró el gasto</Text>
@@ -223,16 +279,83 @@ export default function GastoDetalleScreen() {
   }
 
   const progreso = calcularProgresoPago()
-  const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
+  const todosLosDetalles = gastosCuota.flatMap(gasto => 
+    Array.isArray(gasto.detalles) ? gasto.detalles : []
+  )
+  
   // Calcular el "total pagado" como la diferencia entre el total y las diferencias absolutas
-  const totalDiferenciasAbsolutas = detallesArray.reduce((sum, d) => {
+  const totalDiferenciasAbsolutas = todosLosDetalles.reduce((sum, d) => {
     const monto = d.monto || 0
     const saldo = getSaldoPagado(d)
     return sum + Math.abs(monto - saldo)
   }, 0)
-  const totalMonto = detallesArray.reduce((sum, d) => sum + d.monto, 0)
+  const totalMonto = todosLosDetalles.reduce((sum, d) => sum + d.monto, 0)
   const totalPagado = totalMonto - totalDiferenciasAbsolutas
-  const gruposCuotas = agruparPorCuotas(detallesArray)
+  const gruposMeses = agruparPorMes(gastosCuota)
+  
+  // Calcular deudas globales para el resumen
+  const calcularDeudasGlobales = () => {
+    const balances = calcularBalancesNetos()
+    const deudores = balances.filter(b => b.balance < -0.01)
+    const acreedores = balances.filter(b => b.balance > 0.01)
+    
+    const deudas = []
+    
+    for (const deudor of deudores) {
+      const montoAdeudado = Math.abs(deudor.balance)
+      let montoRestante = montoAdeudado
+      
+      for (const acreedor of acreedores) {
+        if (montoRestante <= 0.01) break
+        
+        const montoPago = Math.min(montoRestante, acreedor.balance)
+        
+        if (montoPago > 0.01) {
+          deudas.push({
+            deudor: deudor.nickname,
+            acreedor: acreedor.nickname,
+            monto: Math.round(montoPago * 100) / 100
+          })
+          montoRestante -= montoPago
+          acreedor.balance -= montoPago
+        }
+      }
+    }
+    
+    return deudas
+  }
+  
+  const deudas = calcularDeudasGlobales()
+
+  const eliminarPago = async (pagoId: string) => {
+    Alert.alert(
+      'Confirmar eliminación',
+      '¿Estás seguro de que quieres eliminar este pago?',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await pagosService.eliminarPago(pagoId)
+              showSuccessToast('Pago eliminado correctamente')
+              // Recargar los datos
+              if (gastoId && numeroCuota) {
+                cargarGastoDetalle(gastoId, numeroCuota)
+              }
+            } catch (error: any) {
+              console.error('Error eliminando pago:', error)
+              showAlert('Error', 'No se pudo eliminar el pago')
+            }
+          },
+        },
+      ]
+    )
+  }
 
   return (
     <View style={styles.container}>
@@ -242,7 +365,7 @@ export default function GastoDetalleScreen() {
           <IconButton
             icon="arrow-left"
             size={24}
-            onPress={() => router.back()}
+            onPress={() => router.push('/(tabs)/gastos')}
           />
           <Text style={styles.headerTitle}>Detalle de gasto</Text>
         </View>
@@ -258,46 +381,50 @@ export default function GastoDetalleScreen() {
         <Card style={styles.headerCard}>
         <Card.Content>
           <View style={styles.gastoInfo}>
-            <Title style={styles.titulo}>{gasto.descripcion}</Title>
+            <Title style={styles.titulo}>
+              {gastoBase.descripcion}{gastoBase.cuotas > 1 ? ` - Cuota ${numeroCuota}` : ''}
+            </Title>
             <Chip
-              icon={getTipoIcon(gasto.tipo)}
-              style={[styles.tipoChip, { backgroundColor: getTipoColor(gasto.tipo) }]}
+              icon={getTipoIcon(gastoBase.tipo)}
+              style={[styles.tipoChip, { backgroundColor: getTipoColor(gastoBase.tipo) }]}
               textStyle={styles.tipoChipText}
             >
-              {gasto.tipo === 'personal' ? 'Personal' : 'Compartido'}
+              {gastoBase.tipo === 'personal' ? 'Personal' : 'Compartido'}
             </Chip>
           </View>
 
           <View style={styles.montoContainer}>
-            <Text style={styles.montoTotal}>{formatearMonto(gasto.monto || 0)}</Text>
+            <Text style={styles.montoTotal}>{formatearMonto(totalMonto)}</Text>
             <Text style={styles.montoPagado}>
               Pagado: {formatearMonto(totalPagado)}
             </Text>
-            {(gasto.descuento || 0) > 0 && (
+            {(gastoBase.descuento || 0) > 0 && (
               <Text style={styles.descuentoText}>
-                Descuento aplicado: {formatearMonto(gasto.descuento || 0)}
+                Descuento aplicado: {formatearMonto(gastoBase.descuento || 0)}
               </Text>
             )}
             <Text style={styles.montoRestante}>
-              Restante: {formatearMonto(detallesArray.filter(d => !d.pagado).reduce((sum, d) => sum + d.monto, 0))}
+              Restante: {formatearMonto(todosLosDetalles.filter(d => !d.pagado).reduce((sum, d) => sum + d.monto, 0))}
             </Text>
           </View>
 
           <View style={styles.infoRow}>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Fecha</Text>
-              <Text style={styles.infoValue}>{formatearFecha(gasto.fecha)}</Text>
-            </View>
-            {(gasto.cuotas || 1) > 1 && (
+            {(gastoBase.cuotas || 1) > 1 && (
               <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Cuotas</Text>
-                <Text style={styles.infoValue}>{gasto.cuotas || 1}</Text>
+                <Text style={styles.infoLabel}>Cuota</Text>
+                <Text style={styles.infoValue}>{numeroCuota} de {gastoBase.cuotas || 1}</Text>
               </View>
             )}
-            {(gasto.descuento || 0) > 0 && (
+            {gastoBase.tipo !== 'personal' && (
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>Participantes</Text>
+                <Text style={styles.infoValue}>{todosLosDetalles.length}</Text>
+              </View>
+            )}
+            {(gastoBase.descuento || 0) > 0 && (
               <View style={styles.infoItem}>
                 <Text style={styles.infoLabel}>Descuento</Text>
-                <Text style={styles.infoValue}>{formatearMonto(gasto.descuento || 0)}</Text>
+                <Text style={styles.infoValue}>{formatearMonto(gastoBase.descuento || 0)}</Text>
               </View>
             )}
           </View>
@@ -318,48 +445,44 @@ export default function GastoDetalleScreen() {
               {Math.round(progreso)}% completado
             </Text>
           </View>
-        </Card.Content>
-      </Card>
+          </Card.Content>
+        </Card>
 
-      {/* Detalles agrupados por cuotas */}
-      <Card style={styles.detallesCard}>
-        <Card.Content>
-          <Title style={styles.detallesTitle}>Detalles del Gasto</Title>
+      {/* Detalles agrupados por mes */}
+      {gastoBase.tipo !== 'personal' && (
+        <Card style={styles.detallesCard}>
+          <Card.Content>
+            <Title style={styles.detallesTitle}>
+              Participantes{gastoBase.cuotas > 1 ? ` de la Cuota ${numeroCuota}` : ''}
+            </Title>
           
-          {Object.keys(gruposCuotas).sort((a, b) => Number(a) - Number(b)).map(cuotaNum => {
-            const detallesCuota = gruposCuotas[Number(cuotaNum)]
-            const totalCuota = detallesCuota.reduce((sum, d) => sum + d.monto, 0)
-            // Calcular progreso de cuota usando diferencias absolutas
-            const diferenciasAbsolutasCuota = detallesCuota.reduce((sum, d) => {
-              const monto = d.monto || 0
-              const saldo = getSaldoPagado(d)
-              return sum + Math.abs(monto - saldo)
-            }, 0)
-            const progresoCuota = totalCuota > 0 ? Math.max(0, ((totalCuota - diferenciasAbsolutasCuota) / totalCuota) * 100) : 0
+          {Object.keys(gruposMeses).sort().map(mesKey => {
+            const grupoMes = gruposMeses[mesKey]
+            const gastosDelMes = grupoMes.gastos
+            const detallesDelMes = gastosDelMes.flatMap(gasto => 
+              Array.isArray(gasto.detalles) ? gasto.detalles : []
+            )
+            const totalMes = detallesDelMes.reduce((sum, d) => sum + d.monto, 0)
+            const pagadoMes = detallesDelMes.filter(d => d.pagado).reduce((sum, d) => sum + d.monto, 0)
+            const progresoMes = totalMes > 0 ? (pagadoMes / totalMes) * 100 : 0
             
             return (
-              <View key={cuotaNum} style={styles.cuotaContainer}>
-                {gasto.cuotas > 1 && (
-                  <View style={styles.cuotaHeader}>
-                    <Text style={styles.cuotaTitle}>Cuota {cuotaNum}</Text>
-                    <Badge 
-                      style={[
-                        styles.cuotaBadge,
-                        { backgroundColor: progresoCuota === 100 ? '#4CAF50' : '#2196F3' }
-                      ]}
-                    >
-                      {Math.round(progresoCuota)}%
-                    </Badge>
-                  </View>
-                )}
+              <View key={mesKey} style={styles.cuotaContainer}>
+                <View style={styles.cuotaHeader}>
+                  <Text style={styles.cuotaTitle}>{grupoMes.nombre}</Text>
+                  <Badge 
+                    style={[
+                      styles.cuotaBadge,
+                      { backgroundColor: progresoMes === 100 ? '#4CAF50' : '#2196F3' }
+                    ]}
+                  >
+                    {Math.round(progresoMes)}%
+                  </Badge>
+                </View>
                 
-                {detallesCuota.map((detalle, index) => {
+                {detallesDelMes.map((detalle, index) => {
                   const estadoPago = getEstadoPago(detalle)
                   const deudas = calcularDeudasParticipante(detalle.usuario?.id || '')
-                  const saldoActual = getSaldoPagado(detalle)
-                  const montoTotal = detalle.monto
-                  const montoPendiente = montoTotal - saldoActual
-                  const esCreador = gasto.usuario_id === detalle.usuario?.id
                   
                   return (
                     <View key={detalle.id} style={styles.detalleItem}>
@@ -387,6 +510,8 @@ export default function GastoDetalleScreen() {
                             </Chip>
                           </View>
                         )}
+                        onPress={!detalle.pagado && detalle.monto > 0 ? () => router.push(`/gasto/${gastoId}-cuota-${numeroCuota}/pagar?participante=${detalle.id}`) : undefined}
+                        style={[styles.participanteRow, !detalle.pagado && detalle.monto > 0 && styles.participanteRowClickable]}
                       />
                       
                       {/* Mostrar deudas específicas */}
@@ -401,20 +526,18 @@ export default function GastoDetalleScreen() {
                         </View>
                       )}
                       
-
-                      
                       {detalle.vencimiento && (
                         <Text style={styles.vencimientoText}>
                           Vence: {formatearFecha(detalle.vencimiento)}
                         </Text>
                       )}
                       
-                      {index < detallesCuota.length - 1 && <Divider />}
+                      {index < detallesDelMes.length - 1 && <Divider />}
                     </View>
                   )
                 })}
                 
-                {Number(cuotaNum) < Math.max(...Object.keys(gruposCuotas).map(Number)) && (
+                {Object.keys(gruposMeses).indexOf(mesKey) < Object.keys(gruposMeses).length - 1 && (
                   <Divider style={styles.cuotaDivider} />
                 )}
               </View>
@@ -422,30 +545,107 @@ export default function GastoDetalleScreen() {
           })}
         </Card.Content>
       </Card>
+      )}
+
+      {/* Historial de Pagos */}
+      {(() => {
+        const todosLosDetalles = gastosCuota.flatMap(gasto => 
+          Array.isArray(gasto.detalles) ? gasto.detalles : []
+        )
+        const todosLosPagos = todosLosDetalles.flatMap(detalle => 
+          Array.isArray(detalle.pagos) ? detalle.pagos.map(pago => ({
+            ...pago,
+            detalle: detalle,
+            participante: detalle.usuario?.nickname || detalle.nombre_participante || 'Participante'
+          })) : []
+        )
+        
+        if (todosLosPagos.length === 0) return null
+        
+        return (
+          <Card style={styles.detallesCard}>
+            <Card.Content>
+              <Title style={styles.detallesTitle}>Historial de Pagos</Title>
+              {todosLosPagos.map((pago, index) => (
+                <View key={pago.id} style={styles.pagoItem}>
+                  <List.Item
+                    title={`${pago.participante} - ${formatearMonto(pago.monto)}`}
+                    description={`${pago.medio_pago} - ${formatearFecha(pago.fecha_pago)}${pago.notas ? ` - ${pago.notas}` : ''}`}
+                    left={() => (
+                      <View style={styles.participanteIcon}>
+                        <Ionicons 
+                          name="cash-outline" 
+                          size={20} 
+                          color="#4CAF50" 
+                        />
+                      </View>
+                    )}
+                    right={() => (
+                      <IconButton
+                        icon="delete"
+                        size={20}
+                        iconColor="#f44336"
+                        onPress={() => eliminarPago(pago.id)}
+                      />
+                    )}
+                  />
+                  {index < todosLosPagos.length - 1 && <Divider />}
+                </View>
+              ))}
+            </Card.Content>
+          </Card>
+        )
+      })()}
 
       {/* Botones de acción */}
       <View style={styles.actionsContainer}>
+        {progreso < 100 && gastoBase?.es_recurrente && (
+          <Button
+            mode="contained"
+            onPress={() => router.push(`/gasto/${gastoId}-cuota-${numeroCuota}/pagar-recurrente`)}
+            style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
+            icon="refresh"
+          >
+            Pagar Recurrente
+          </Button>
+        )}
+
+        {progreso < 100 && (
+          <Button
+            mode="contained"
+            onPress={() => router.push(`/gasto/${gastoId}-cuota-${numeroCuota}/pagar-todo`)}
+            style={[styles.actionButton, { backgroundColor: '#4CAF50' }]}
+            icon="cash-multiple"
+          >
+            Pagar Todo
+          </Button>
+        )}
+
         <Button
-          mode="contained"
-          onPress={() => router.push(`/gasto/${gasto.id}/pagar`)}
-          icon="credit-card"
-          disabled={progreso === 100}
+          mode="outlined"
+          onPress={() => router.push(`/gastos/editar/${gastoId}`)}
           style={styles.actionButton}
+          icon="pencil"
         >
-          {progreso === 100 ? 'Completamente Pagado' : 'Registrar Pago'}
+          Editar Gasto
         </Button>
-        
-
-
       </View>
-      </ScrollView>
-        
 
-         
-
-       </View>
-     )
-   }
+      {/* Resumen de deudas */}
+      {deudas.length > 0 && (
+        <View style={styles.deudasContainer}>
+          <Text style={styles.deudasTitle}>Resumen de Deudas:</Text>
+          {deudas.map((deuda, index) => (
+            <Text key={index} style={styles.deudaText}>
+              • {deuda.deudor} debe {formatearMonto(deuda.monto)} a {deuda.acreedor}
+            </Text>
+          ))}
+        </View>
+      )}
+    </ScrollView>
+    </View>
+  )
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -648,5 +848,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#BF360C',
     marginLeft: 8,
+  },
+  pagoItem: {
+    marginBottom: 8,
+  },
+  participanteRow: {
+    borderRadius: 8,
+  },
+  participanteRowClickable: {
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
   },
 })

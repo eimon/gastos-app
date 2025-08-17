@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Gastos App",
-    "slug": "gastos-app",
+    "slug": "gastosapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -23,7 +23,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.gastosapp.mobile"
+      "package": "com.gastosapp.mobile",
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -38,8 +39,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "0e85d0f7-38eb-4b3e-ac20-e7d8b1cdbe77"
       }
-    }
+    },
+    "owner": "eim0n"
   }
 }

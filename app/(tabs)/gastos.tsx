@@ -22,26 +22,32 @@ import {
   Portal,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
-import { supabase, gastosService, Gasto, TipoGasto } from '../../lib/supabase'
+import { supabase, gastosService, solicitudesPagoService, Gasto, GastoCuotaUnificada, TipoGasto, SolicitudPagoCreate } from '../../lib/supabase'
 import { router } from 'expo-router'
 import { showAlert, showConfirm } from '../../lib/alerts'
 import { useFocusEffect } from '@react-navigation/native'
 
 export default function GastosScreen() {
-  const [gastos, setGastos] = useState<Gasto[]>([])
-  const [gastosRecibidos, setGastosRecibidos] = useState<Gasto[]>([])
+  const [gastosUnificados, setGastosUnificados] = useState<GastoCuotaUnificada[]>([])
+  const [gastosCompartidosComoParticipante, setGastosCompartidosComoParticipante] = useState<GastoCuotaUnificada[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [filtroTipo, setFiltroTipo] = useState<TipoGasto | 'todos' | 'recibidos'>('todos')
+  const [filtroTipo, setFiltroTipo] = useState<TipoGasto | 'todos' | 'participo'>('todos')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [gastoAEliminar, setGastoAEliminar] = useState<Gasto | null>(null)
+  const [gastoAEliminar, setGastoAEliminar] = useState<GastoCuotaUnificada | null>(null)
   const [eliminando, setEliminando] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [mesActual, setMesActual] = useState(new Date().getMonth() + 1)
+  const [añoActual, setAñoActual] = useState(new Date().getFullYear())
 
   useEffect(() => {
     cargarGastos()
   }, [])
+
+  useEffect(() => {
+    cargarGastos()
+  }, [mesActual, añoActual])
 
   // Recargar datos cada vez que se enfoque la pestaña
   useFocusEffect(
@@ -50,68 +56,29 @@ export default function GastosScreen() {
     }, [])
   )
 
-  const obtenerGastosRecibidos = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return []
 
-      // Usar la función RPC para obtener gastos compartidos
-      const { data: gastosData, error } = await supabase
-        .rpc('obtener_gastos_compartidos', {
-          usuario_actual_id: user.id
-        })
-
-      if (error) {
-        console.error('Error al obtener gastos recibidos:', error)
-        return []
-      }
-
-      // Transformar los datos para que coincidan con la estructura esperada
-      const gastosTransformados = (gastosData || []).map((gasto: any) => ({
-        id: `${gasto.gasto_id}-${gasto.mi_numero_cuota}`, // Clave única combinando gasto_id y numero_cuota
-        gasto_id: gasto.gasto_id, // ID original del gasto
-        descripcion: gasto.descripcion,
-        monto: gasto.monto_total,
-        fecha: gasto.mi_vencimiento, // Usar fecha de vencimiento
-        cuotas: gasto.cuotas,
-        descuento: gasto.descuento,
-        tipo_descuento: gasto.tipo_descuento,
-        created_at: gasto.created_at,
-        usuario_id: gasto.creador_id,
-        numero_cuota: gasto.mi_numero_cuota,
-        tipo: 'compartido' as TipoGasto,
-        usuarios: {
-          id: gasto.creador_id,
-          nickname: gasto.creador_nickname,
-          email: gasto.creador_email
-        },
-        detalles: [{
-          id: gasto.gasto_id,
-          usuario_id: user.id,
-          monto: gasto.mi_monto,
-          pagado: gasto.mi_pagado,
-          vencimiento: gasto.mi_vencimiento
-        }]
-      }))
-
-      return gastosTransformados
-    } catch (error) {
-      console.error('Error:', error)
-      return []
-    }
-  }
 
   const cargarGastos = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user || !user.id) {
+        console.log('Usuario no autenticado')
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
 
       setCurrentUserId(user.id)
-      const gastosData = await gastosService.obtenerGastos(user.id)
-      const gastosRecibidosData = await obtenerGastosRecibidos()
       
-      setGastos(gastosData)
-      setGastosRecibidos(gastosRecibidosData)
+      // Cargar gastos propios y compartidos (función original)
+      const gastosUnificadosData = await gastosService.obtenerGastosCuotasUnificadas(user.id, mesActual, añoActual)
+      setGastosUnificados(gastosUnificadosData)
+      
+      // Cargar gastos compartidos donde participo pero no soy creador
+      const gastosCompartidosComoParticipanteData = await gastosService.obtenerGastosCompartidosComoParticipante(user.id, mesActual, añoActual)
+      setGastosCompartidosComoParticipante(gastosCompartidosComoParticipanteData)
+      
+      console.log('Gastos compartidos como participante:', gastosCompartidosComoParticipanteData.length)
     } catch (error) {
       console.error('Error cargando gastos:', error)
       showAlert('Error', 'No se pudieron cargar los gastos')
@@ -132,9 +99,12 @@ export default function GastosScreen() {
     setEliminando(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user || !user.id) {
+        console.log('Usuario no autenticado en eliminarGasto')
+        return
+      }
 
-      await gastosService.eliminarGasto(gastoAEliminar.id, user.id)
+      await gastosService.eliminarGasto(gastoAEliminar.gasto_id, user.id)
       await cargarGastos()
       setShowDeleteModal(false)
       setGastoAEliminar(null)
@@ -146,7 +116,7 @@ export default function GastosScreen() {
     }
   }
 
-  const confirmarEliminar = (gasto: Gasto) => {
+  const confirmarEliminar = (gasto: GastoCuotaUnificada) => {
     setGastoAEliminar(gasto)
     setShowDeleteModal(true)
   }
@@ -156,20 +126,85 @@ export default function GastosScreen() {
     setGastoAEliminar(null)
   }
 
-  const gastosArray = Array.isArray(gastos) ? gastos : []
-  const gastosRecibidosArray = Array.isArray(gastosRecibidos) ? gastosRecibidos : []
-  
-  // Combinar gastos según el filtro seleccionado
-  let gastosCombinados = []
-  if (filtroTipo === 'recibidos') {
-    gastosCombinados = gastosRecibidosArray
-  } else if (filtroTipo === 'todos') {
-    gastosCombinados = [...gastosArray, ...gastosRecibidosArray]
-  } else {
-    gastosCombinados = gastosArray.filter(gasto => gasto.tipo === filtroTipo)
+  const crearSolicitudPago = async (gasto: GastoCuotaUnificada) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !user.id) {
+        showAlert('Error', 'Usuario no autenticado')
+        return
+      }
+
+      // Encontrar el gasto_detalle del usuario actual
+      const participanteUsuario = gasto.participantes.find(p => p.usuario_id === user.id)
+      if (!participanteUsuario) {
+        showAlert('Error', 'No se encontró tu participación en este gasto')
+        return
+      }
+
+      // Verificar que el usuario no haya pagado completamente
+      if (gasto.usuario_completamente_pagado) {
+        showAlert('Información', 'Ya has pagado completamente tu parte de este gasto')
+        return
+      }
+
+      const solicitudData: SolicitudPagoCreate = {
+        gasto_detalle_id: participanteUsuario.id,
+        usuario_creador_id: gasto.usuario_id,
+        monto: gasto.monto_usuario - gasto.monto_pagado_usuario,
+        notas: `Solicitud de pago para: ${gasto.descripcion}`
+      }
+
+      await solicitudesPagoService.crearSolicitudPago(solicitudData, user.id)
+      showAlert('Éxito', 'Solicitud de pago enviada correctamente')
+      await cargarGastos() // Recargar para actualizar el estado
+    } catch (error: any) {
+      showAlert('Error', error.message || 'No se pudo crear la solicitud de pago')
+    }
   }
+
+  const navegarMesAnterior = () => {
+    if (mesActual === 1) {
+      setMesActual(12)
+      setAñoActual(añoActual - 1)
+    } else {
+      setMesActual(mesActual - 1)
+    }
+  }
+
+  const navegarMesSiguiente = () => {
+    if (mesActual === 12) {
+      setMesActual(1)
+      setAñoActual(añoActual + 1)
+    } else {
+      setMesActual(mesActual + 1)
+    }
+  }
+
+  const obtenerNombreMes = (mes: number) => {
+    const meses = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ]
+    return meses[mes - 1]
+  }
+
+  const gastosUnificadosArray = Array.isArray(gastosUnificados) ? gastosUnificados : []
+  const gastosCompartidosComoParticipanteArray = Array.isArray(gastosCompartidosComoParticipante) ? gastosCompartidosComoParticipante : []
   
-  const gastosFiltrados = gastosCombinados.filter(gasto => {
+  // Filtrar gastos según el filtro seleccionado
+  let gastosFiltrados = gastosUnificadosArray
+  
+  if (filtroTipo === 'personal') {
+    gastosFiltrados = gastosUnificadosArray.filter(gasto => gasto.tipo === 'personal')
+  } else if (filtroTipo === 'compartido') {
+    gastosFiltrados = gastosUnificadosArray.filter(gasto => gasto.tipo === 'compartido')
+  } else if (filtroTipo === 'participo') {
+    gastosFiltrados = gastosCompartidosComoParticipanteArray
+  }
+  // Si filtroTipo === 'todos', no se aplica ningún filtro
+  
+  // Aplicar filtro de búsqueda
+  gastosFiltrados = gastosFiltrados.filter(gasto => {
     const coincideBusqueda = gasto.descripcion?.toLowerCase().includes(searchQuery.toLowerCase()) || false
     return coincideBusqueda
   })
@@ -184,188 +219,199 @@ export default function GastosScreen() {
   }
 
   const formatearMonto = (monto: number) => {
-    return new Intl.NumberFormat('es-AR', {
+    const formatted = new Intl.NumberFormat('es-AR', {
       style: 'currency',
-      currency: 'ARS'
-    }).format(monto)
+      currency: 'ARS',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(monto).replace(/\s/g, '')
+    
+    // Separar la parte entera de los decimales
+    const parts = formatted.split(',')
+    if (parts.length === 2) {
+      return { entero: parts[0], decimales: parts[1] }
+    }
+    return { entero: formatted, decimales: null }
   }
 
-  const calcularProgresoPago = (gasto: Gasto) => {
-    const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
-    if (detallesArray.length === 0) return 0
-    
-    const totalMonto = gasto.monto - gasto.descuento || 0
-    const montoPagado = detallesArray.filter(d => d.pagado).reduce((sum, d) => sum + d.monto, 0)
-    
-    return totalMonto > 0 ? (montoPagado / totalMonto) * 100 : 0
-  }
 
-  const renderGasto = ({ item: gasto }: { item: Gasto }) => {
-    const progreso = calcularProgresoPago(gasto)
-    const detallesArray = Array.isArray(gasto.detalles) ? gasto.detalles : []
-    const totalPagado = detallesArray.filter(d => d.pagado).reduce((sum, d) => sum + d.monto, 0)
+
+  const renderGasto = ({ item: gasto }: { item: GastoCuotaUnificada }) => {
     const esGastoPropio = gasto.usuario_id === currentUserId
-    const esGastoRecibido = filtroTipo === 'recibidos' || (!esGastoPropio && gasto.tipo === 'compartido')
     const esGastoCompartido = !esGastoPropio && gasto.tipo === 'compartido'
-
+    const esGastoParticipo = filtroTipo === 'participo'
+    const esCuotas = (gasto.cuotas || 1) > 1
+    
+    // Calcular porcentaje de pago - usar datos específicos del usuario para gastos compartidos
+    const porcentajePago = esGastoCompartido 
+      ? Math.round(gasto.porcentaje_pagado_usuario || 0)
+      : Math.round(gasto.porcentaje_pagado)
+    const cuotaCompletamentePagada = esGastoCompartido 
+      ? gasto.usuario_completamente_pagado
+      : gasto.esta_completamente_pagada
+    
     return (
-      <Card style={[styles.gastoCard, (esGastoCompartido || esGastoRecibido) && styles.gastoCompartidoCard]}>
-        <Card.Content>
-          <View style={styles.gastoHeader}>
-            <View style={styles.gastoInfo}>
-              <View style={styles.tituloContainer}>
-                <Title style={styles.gastoTitulo}>{gasto.descripcion || 'Sin descripción'}</Title>
-                {(esGastoCompartido || esGastoRecibido) && (
-                  <Chip
-                    icon="account-group"
-                    style={styles.compartidoChip}
-                    textStyle={styles.compartidoChipText}
-                    compact
-                  >
-                    {esGastoRecibido ? 'Recibido' : 'Solo lectura'}
-                  </Chip>
+      <TouchableOpacity 
+        style={[
+          styles.gastoRowCard, 
+          esGastoCompartido && styles.gastoCompartidoRowCard,
+          esGastoParticipo && styles.gastoParticipoRowCard
+        ]}
+        onPress={() => router.push(`/gasto/${gasto.gasto_id}-cuota-${gasto.numero_cuota}`)}
+      >
+        <View style={styles.gastoRowContent}>
+          {/* Columna izquierda: Descripción y tipo */}
+          <View style={styles.gastoRowLeft}>
+            <View style={styles.gastoRowTituloContainer}>
+              <Chip
+                icon={getTipoIcon(gasto.tipo)}
+                style={[styles.gastoRowChipIconOnly, { backgroundColor: getTipoColor(gasto.tipo) }]}
+                compact
+              >
+                {''}
+              </Chip>
+              <View style={styles.gastoRowTituloTexto}>
+                <Text style={styles.gastoRowTitulo} numberOfLines={1}>
+                  {gasto.descripcion || 'Sin descripción'}
+                </Text>
+                {esCuotas && (
+                  <Text style={styles.gastoRowCuotaTexto}>
+                    cuota {gasto.numero_cuota} de {gasto.cuotas}
+                  </Text>
                 )}
               </View>
-              <View style={styles.gastoMeta}>
-                <Chip
-                  icon={getTipoIcon(gasto.tipo)}
-                  style={[styles.tipoChip, { backgroundColor: getTipoColor(gasto.tipo) }]}
-                  textStyle={styles.tipoChipText}
-                >
-                  {gasto.tipo === 'personal' ? 'Personal' : 'Compartido'}
-                </Chip>
-                <Text style={styles.fechaText}>
-                  {esGastoRecibido ? 
-                    `Vence: ${new Date(gasto.fecha).toLocaleDateString('es-AR')}` :
-                    new Date(gasto.created_at).toLocaleDateString('es-AR')
-                  }
-                </Text>
-              </View>
-              {esGastoRecibido && gasto.usuarios && (
-                <Text style={styles.creadorText}>
-                  Creado por: {gasto.usuarios.nickname}
-                </Text>
-              )}
             </View>
-            {esGastoPropio && (
-              <IconButton
-                icon="delete"
-                size={20}
-                iconColor="#dc2626"
-                onPress={() => confirmarEliminar(gasto)}
-              />
+            {(esGastoCompartido || esGastoParticipo) && (
+              <View style={styles.gastoRowMeta}>
+                <Chip
+                  icon="account-group"
+                  style={esGastoParticipo ? styles.gastoRowParticipoChip : styles.gastoRowCompartidoChip}
+                  textStyle={esGastoParticipo ? styles.gastoRowParticipoChipText : styles.gastoRowCompartidoChipText}
+                  compact
+                >
+                  {esGastoParticipo ? 'Participo' : 'Compartido'}
+                </Chip>
+              </View>
             )}
           </View>
 
-          <View style={styles.montoContainer}>
-            {esGastoRecibido ? (
-              <>
-                <Text style={styles.montoLabel}>Mi Parte</Text>
-                <Text style={styles.montoTotal}>
-                  {formatearMonto(gasto.detalles?.[0]?.monto || 0)}
-                </Text>
-                {gasto.numero_cuota && gasto.cuotas && gasto.cuotas > 1 && (
-                  <Text style={styles.cuotasInfo}>
-                    Cuota {gasto.numero_cuota}/{gasto.cuotas}
-                  </Text>
-                )}
-                <Text style={styles.montoPagado}>
-                  Estado: {gasto.detalles?.[0]?.pagado ? 'Pagado' : 'Pendiente'}
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.montoTotal}>{formatearMonto(gasto.monto || 0)}</Text>
-                <Text style={styles.montoPagado}>
-                  Pagado: {formatearMonto(totalPagado)}
-                </Text>
-                {(gasto.descuento || 0) > 0 && (
-                  <Text style={styles.descuentoText}>
-                    Descuento aplicado: {formatearMonto(gasto.descuento || 0)}
-                  </Text>
-                )}
-              </>
+          {/* Columna central: Información de cuotas y participantes */}
+          <View style={styles.gastoRowCenter}>
+            {gasto.tipo !== 'personal' && (
+              <Text style={styles.gastoRowParticipantes}>
+                {gasto.cantidad_participantes} participante{gasto.cantidad_participantes !== 1 ? 's' : ''}
+              </Text>
             )}
-          </View>
-
-          {(gasto.cuotas || 1) > 1 && (
-            <Text style={styles.cuotasText}>
-              {gasto.cuotas || 1} cuotas
+            <Text style={[styles.gastoRowProgreso, { color: cuotaCompletamentePagada ? '#4CAF50' : '#FF9800' }]}>
+              {porcentajePago}% pagado
             </Text>
-          )}
-
-          <View style={styles.progresoContainer}>
-            <View style={styles.progresoBar}>
+            <View style={styles.gastoRowProgresoBar}>
               <View
                 style={[
-                  styles.progresoFill,
-                  { width: `${progreso}%`, backgroundColor: progreso === 100 ? '#4CAF50' : '#2196F3' }
+                  styles.gastoRowProgresoFill,
+                  { 
+                    width: `${porcentajePago}%`, 
+                    backgroundColor: cuotaCompletamentePagada ? '#4CAF50' : '#2196F3' 
+                  }
                 ]}
               />
             </View>
-            <Text style={styles.progresoText}>
-              {Math.round(progreso)}% completado
+          </View>
+
+          {/* Columna derecha: Monto y fecha */}
+          <View style={styles.gastoRowRight}>
+            <View style={styles.gastoRowMontoContainer}>
+              {(() => {
+                // Mostrar monto específico del usuario para gastos compartidos
+                const montoAMostrar = esGastoCompartido 
+                  ? gasto.monto_usuario || 0
+                  : gasto.monto_total_cuota || 0
+                const monto = formatearMonto(montoAMostrar)
+                return (
+                  <>
+                    <Text style={styles.gastoRowMonto}>{monto.entero}</Text>
+                    {monto.decimales && (
+                      <Text style={styles.gastoRowDecimales}>{monto.decimales}</Text>
+                    )}
+                  </>
+                )
+              })()}
+            </View>
+            <Text style={styles.gastoRowFecha}>
+              {new Date(gasto.fecha).toLocaleDateString('es-AR', { 
+                day: '2-digit', 
+                month: '2-digit' 
+              })}
             </Text>
           </View>
 
-          {!esGastoRecibido && detallesArray.length > 0 && (() => {
-            const participantesUnicos = new Set(
-      detallesArray.map(d => d.usuario_id || d.nombre_participante)
-    ).size;
-            return (
-              <Text style={styles.participantesText}>
-                {participantesUnicos} participante{participantesUnicos > 1 ? 's' : ''}
-              </Text>
-            );
-          })()}
-          {esGastoRecibido && (
-            <View style={styles.espaciadoParticipantes} />
-          )}
-        </Card.Content>
-
-        {!esGastoRecibido && (
-          <Card.Actions>
-            <Button
-              mode="outlined"
-              onPress={() => router.push(`/gasto/${gasto.id}`)}
-              icon="eye"
-            >
-              Ver Detalles
-            </Button>
-            {esGastoPropio && (
-              <Button
-                mode="contained"
-                onPress={() => router.push(`/gasto/${gasto.id}/pagar`)}
-                icon="credit-card"
-                disabled={progreso === 100}
-              >
-                {progreso === 100 ? 'Pagado' : 'Pagar'}
-              </Button>
-            )}
-            {esGastoCompartido && (
-              <Button
-                mode="contained-tonal"
-                icon="account-group"
-                disabled
-              >
-                Gasto compartido
-              </Button>
-            )}
-          </Card.Actions>
-        )}
-      </Card>
+          {/* Botones de acción */}
+          {esGastoPropio ? (
+            <IconButton
+              icon="delete"
+              size={16}
+              iconColor="#dc2626"
+              onPress={(e) => {
+                e.stopPropagation()
+                confirmarEliminar(gasto)
+              }}
+              style={styles.gastoRowDeleteButton}
+            />
+          ) : esGastoCompartido && !gasto.usuario_completamente_pagado ? (
+            <IconButton
+              icon="cash-plus"
+              size={16}
+              iconColor="#4CAF50"
+              onPress={(e) => {
+                e.stopPropagation()
+                crearSolicitudPago(gasto)
+              }}
+              style={styles.gastoRowDeleteButton}
+            />
+          ) : null}
+        </View>
+      </TouchableOpacity>
     )
   }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Searchbar
-          placeholder="Buscar gastos..."
-          onChangeText={setSearchQuery}
-          value={searchQuery}
-          style={styles.searchbar}
-        />
+        <View style={styles.headerTop}>
+          <Searchbar
+            placeholder="Buscar gastos..."
+            onChangeText={setSearchQuery}
+            value={searchQuery}
+            style={styles.searchbar}
+          />
+          <IconButton
+            icon="email-outline"
+            size={24}
+            onPress={() => router.push('/solicitudes-pago')}
+            style={styles.solicitudesButton}
+          />
+        </View>
+        
+        {/* Selector de mes */}
+        <View style={styles.selectorMes}>
+          <IconButton
+            icon="chevron-left"
+            size={24}
+            onPress={navegarMesAnterior}
+            style={styles.navegacionButton}
+          />
+          <View style={styles.mesContainer}>
+            <Text style={styles.mesTexto}>
+              {obtenerNombreMes(mesActual)} {añoActual}
+            </Text>
+          </View>
+          <IconButton
+            icon="chevron-right"
+            size={24}
+            onPress={navegarMesSiguiente}
+            style={styles.navegacionButton}
+          />
+        </View>
         
         <View style={styles.filtros}>
           <TouchableOpacity
@@ -416,15 +462,15 @@ export default function GastosScreen() {
           <TouchableOpacity
             style={[
               styles.filtroButton,
-              filtroTipo === 'recibidos' && styles.filtroButtonActive
+              filtroTipo === 'participo' && styles.filtroButtonActive
             ]}
-            onPress={() => setFiltroTipo('recibidos')}
+            onPress={() => setFiltroTipo('participo')}
           >
             <Text style={[
               styles.filtroButtonText,
-              filtroTipo === 'recibidos' && styles.filtroButtonTextActive
+              filtroTipo === 'participo' && styles.filtroButtonTextActive
             ]}>
-              Recibidos
+              Participo
             </Text>
           </TouchableOpacity>
         </View>
@@ -516,8 +562,38 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
-  searchbar: {
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 12,
+    gap: 8,
+  },
+  searchbar: {
+    flex: 1,
+  },
+  solicitudesButton: {
+    margin: 0,
+  },
+  selectorMes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    paddingVertical: 4,
+  },
+  navegacionButton: {
+    margin: 0,
+  },
+  mesContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  mesTexto: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
   filtros: {
     flexDirection: 'row',
@@ -542,6 +618,161 @@ const styles = StyleSheet.create({
   lista: {
     padding: 16,
   },
+  // Estilos para la vista simplificada de gastos
+  gastoRowCard: {
+    backgroundColor: 'white',
+    marginBottom: 8,
+    borderRadius: 8,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  gastoCompartidoRowCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+    backgroundColor: '#FFF8E1',
+  },
+  gastoParticipoRowCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#9C27B0',
+    backgroundColor: '#F3E5F5',
+  },
+  gastoRowContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    minHeight: 60,
+  },
+  gastoRowLeft: {
+    flex: 2,
+    marginRight: 8,
+  },
+  gastoRowTituloContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  gastoRowTituloTexto: {
+    flex: 1,
+  },
+  gastoRowTitulo: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  gastoRowCuotaTexto: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '400',
+    marginTop: 2,
+  },
+  gastoRowMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  gastoRowChip: {
+    height: 24,
+  },
+  gastoRowChipIconOnly: {
+    height: 35,
+    width: 35,
+    borderRadius: 10,
+    minWidth: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gastoRowChipText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  gastoRowCompartidoChip: {
+    backgroundColor: '#E3F2FD',
+    height: 24,
+  },
+  gastoRowCompartidoChipText: {
+    color: '#1976D2',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  gastoRowParticipoChip: {
+    backgroundColor: '#F3E5F5',
+    height: 24,
+  },
+  gastoRowParticipoChipText: {
+    color: '#7B1FA2',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  gastoRowCenter: {
+    flex: 1.5,
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  gastoRowCuotaInfo: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#666',
+    marginBottom: 2,
+  },
+  gastoRowParticipantes: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#666',
+    marginBottom: 1,
+  },
+  gastoRowProgreso: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#666',
+    marginBottom: 2,
+  },
+  gastoRowProgresoBar: {
+    width: '100%',
+    height: 4,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 2,
+  },
+  gastoRowProgresoFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  gastoRowRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+    marginLeft: 8,
+  },
+  gastoRowMontoContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  gastoRowMonto: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2196F3',
+    marginBottom: 2,
+  },
+  gastoRowDecimales: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#2196F3',
+    textDecorationLine: 'underline',
+    marginTop: -2,
+    marginLeft: 1,
+  },
+  gastoRowFecha: {
+    fontSize: 11,
+    color: '#666',
+  },
+  gastoRowDeleteButton: {
+    margin: 0,
+    marginLeft: 4,
+  },
+  // Estilos legacy mantenidos para compatibilidad
   gastoCard: {
     marginBottom: 12,
     elevation: 2,

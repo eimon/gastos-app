@@ -47,6 +47,7 @@ export default function NuevoGastoScreen() {
   const [primerVencimiento, setPrimerVencimiento] = useState(new Date())
   const [participantes, setParticipantes] = useState<ParticipanteForm[]>([])
   const [pagado, setPagado] = useState(false)
+  const [esRecurrente, setEsRecurrente] = useState(false)
   const [loading, setLoading] = useState(false)
 
   // Estados para UI
@@ -73,6 +74,13 @@ export default function NuevoGastoScreen() {
     }
   }, [tipo])
 
+  useEffect(() => {
+    // Resetear esRecurrente cuando hay más de una cuota
+    if ((cuotas || 1) > 1 && esRecurrente) {
+      setEsRecurrente(false)
+    }
+  }, [cuotas])
+
   const resetearFormulario = () => {
     setDescripcion('')
     setTipo('personal')
@@ -86,6 +94,7 @@ export default function NuevoGastoScreen() {
     setPrimerVencimiento(new Date())
     setParticipantes([])
     setPagado(false)
+    setEsRecurrente(false)
     setShowDatePicker(false)
     setShowParticipanteModal(false)
     setTieneDescuento(false)
@@ -287,7 +296,8 @@ export default function NuevoGastoScreen() {
         tipo_descuento: tipoDescuento,
         participantes: participantesConMonto,
         primer_vencimiento: primerVencimiento.toISOString().split('T')[0],
-        pagado
+        pagado,
+        es_recurrente: esRecurrente
       }
 
       await gastosService.crearGasto(gastoData, user.id)
@@ -413,7 +423,7 @@ export default function NuevoGastoScreen() {
               gasto_detalle_id: detalle.id,
               monto: montoFinal,
               medio_pago: 'Efectivo',
-              fecha_pago: gastoData.primer_vencimiento
+              fecha_pago: new Date().toISOString().split('T')[0]
             })
         }
       }
@@ -504,8 +514,26 @@ export default function NuevoGastoScreen() {
       
       console.log('Todos los detalles creados exitosamente:', detalles);
       
-      // No crear pagos automáticos aquí - se manejarán manualmente según la nueva lógica
-      // Los pagos se registrarán por separado y actualizarán el saldo según corresponda
+      // Si está marcado como pagado, crear pagos automáticos para todos los participantes
+      if (gastoData.pagado && detalles && detalles.length > 0) {
+        const pagosParaInsertar = detalles.map(detalle => ({
+          gasto_detalle_id: detalle.id,
+          monto: detalle.monto,
+          medio_pago: 'Efectivo',
+          fecha_pago: new Date().toISOString().split('T')[0]
+        }));
+        
+        const { error: pagosError } = await supabase
+          .from('pagos')
+          .insert(pagosParaInsertar)
+        
+        if (pagosError) {
+          console.error('Error al crear pagos automáticos:', pagosError);
+          throw pagosError;
+        }
+        
+        console.log('Pagos automáticos creados exitosamente para gasto compartido');
+      }
     } else {
       // Casos 5 y 6: Gasto compartido en cuotas
       // Primero calcular las cuotas con descuento del monto total
@@ -784,6 +812,28 @@ export default function NuevoGastoScreen() {
               </Text>
             </View>
 
+            {/* Gasto recurrente */}
+            <View style={styles.switchContainer}>
+              <View style={styles.switchLabelContainer}>
+                <Text style={[styles.switchLabel, (cuotas || 1) > 1 && { color: '#999' }]}>¿Es un gasto recurrente?</Text>
+                <Text style={[styles.switchDescription, (cuotas || 1) > 1 && { color: '#999' }]}>
+                  {(cuotas || 1) > 1 
+                    ? 'No disponible para gastos con cuotas'
+                    : 'Se generará automáticamente el mes siguiente al pagarlo'
+                  }
+                </Text>
+              </View>
+              <Switch
+                value={esRecurrente && (cuotas || 1) === 1}
+                onValueChange={(value) => {
+                  if ((cuotas || 1) === 1) {
+                    setEsRecurrente(value)
+                  }
+                }}
+                disabled={(cuotas || 1) > 1}
+              />
+            </View>
+
             {/* Pagado (solo para gastos personales de una cuota) */}
             {tipo === 'personal' && cuotas === 1 && (
               <View style={styles.switchContainer}>
@@ -1006,6 +1056,20 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  switchLabelContainer: {
+    flex: 1,
+    marginRight: 16,
+  },
+  switchLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  switchDescription: {
+    fontSize: 12,
+    color: '#666',
+    lineHeight: 16,
   },
   dateButton: {
     marginBottom: 16,
