@@ -20,9 +20,9 @@ import {
 } from 'react-native-paper'
 import { useLocalSearchParams, router } from 'expo-router'
 import { supabase, Gasto, GastoDetalle } from '../../../lib/supabase'
-import { showAlert, showSuccessToast } from '../../../lib/alerts'
+import { showAlert } from '../../../lib/alerts'
 
-type MedioPago = 'Efectivo' | 'Transferencia'
+type MedioPago = 'efectivo' | 'transferencia'
 
 export default function PagarTodoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -32,7 +32,7 @@ export default function PagarTodoScreen() {
   const [numeroCuota, setNumeroCuota] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [guardando, setGuardando] = useState(false)
-  const [medioPago, setMedioPago] = useState<MedioPago>('Efectivo')
+  const [medioPago, setMedioPago] = useState<MedioPago>('efectivo')
   const [descripcion, setDescripcion] = useState('')
 
   useEffect(() => {
@@ -65,23 +65,20 @@ export default function PagarTodoScreen() {
       if (gastoBaseError) throw gastoBaseError
       setGastoBase(gastoBaseData)
 
-      // Cargar todos los detalles de la cuota específica
-      const { data: detallesData, error: gastosCuotaError } = await supabase
-        .from('gastos_detalle')
+      // Cargar todos los gastos de la cuota específica
+      const { data: gastosCuotaData, error: gastosCuotaError } = await supabase
+        .from('gastos')
         .select(`
           *,
-          gasto:gastos(*),
-          usuario:usuarios(*),
-          pagos(*)
+          detalles:gastos_detalle(
+            *,
+            usuario:usuarios(*),
+            pagos(*)
+          )
         `)
-        .eq('gasto_id', gastoIdParam)
+        .eq('gasto_base_id', gastoIdParam)
         .eq('numero_cuota', numeroCuotaParam)
-
-      // Convertir detalles a formato de gastos para compatibilidad
-      const gastosCuotaData = detallesData ? [{
-        ...gastoBaseData,
-        detalles: detallesData
-      }] : []
+        .eq('usuario_id', user.id)
 
       if (gastosCuotaError) throw gastosCuotaError
       setGastosCuota(gastosCuotaData || [])
@@ -255,14 +252,14 @@ export default function PagarTodoScreen() {
                 value={medioPago}
               >
                 <View style={styles.radioContainer}>
-                  <RadioButton.Item
-                    label="Efectivo"
-                    value="Efectivo"
+                  <RadioButton.Item 
+                  label="Efectivo"
+                  value="efectivo"
                     style={styles.radioItem}
                   />
-                  <RadioButton.Item
-                    label="Transferencia"
-                    value="Transferencia"
+                  <RadioButton.Item 
+                  label="Transferencia"
+                  value="transferencia"
                     style={styles.radioItem}
                   />
                 </View>

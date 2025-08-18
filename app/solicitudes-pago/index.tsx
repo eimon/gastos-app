@@ -56,13 +56,16 @@ export default function SolicitudesPagoScreen() {
     cargarSolicitudes()
   }
 
-  const aceptarSolicitud = async (solicitudId: string) => {
+  const aceptarSolicitud = async (solicitudId: string, usuarioCreadorId: string) => {
     showConfirm(
       'Confirmar pago',
       '¿Estás seguro de que quieres aceptar esta solicitud? Se generará automáticamente el pago correspondiente.',
       async () => {
         try {
-          await solicitudesPagoService.aceptarSolicitud(solicitudId)
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return
+          
+          await solicitudesPagoService.aceptarSolicitud(solicitudId, usuarioCreadorId)
           showAlert('Éxito', 'Solicitud aceptada y pago generado correctamente')
           await cargarSolicitudes()
         } catch (error: any) {
@@ -78,7 +81,10 @@ export default function SolicitudesPagoScreen() {
       '¿Estás seguro de que quieres rechazar esta solicitud?',
       async () => {
         try {
-          await solicitudesPagoService.rechazarSolicitud(solicitudId)
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return
+          
+          await solicitudesPagoService.rechazarSolicitud(solicitudId, user.id)
           showAlert('Información', 'Solicitud rechazada')
           await cargarSolicitudes()
         } catch (error: any) {
@@ -108,18 +114,18 @@ export default function SolicitudesPagoScreen() {
 
   const renderSolicitud = (solicitud: SolicitudPago, esRecibida: boolean) => {
     return (
-      <Card key={solicitud.id} style={styles.solicitudCard}>
+      <Card style={styles.solicitudCard}>
         <Card.Content>
           <View style={styles.solicitudHeader}>
             <View style={styles.solicitudInfo}>
               <Text style={styles.solicitudDescripcion}>
-                {solicitud.gasto_detalle.gasto.descripcion}
+                {solicitud.gasto_descripcion}
               </Text>
               <Text style={styles.solicitudUsuario}>
                 {esRecibida ? 'De: ' : 'Para: '}
                 {esRecibida 
-                  ? solicitud.usuario_solicitante.nombre 
-                  : solicitud.usuario_creador.nombre
+                  ? (solicitud.solicitante_nickname || solicitud.solicitante_email)
+                  : (solicitud.creador_nickname || solicitud.creador_email)
                 }
               </Text>
               <Text style={styles.solicitudMonto}>
@@ -139,22 +145,24 @@ export default function SolicitudesPagoScreen() {
           )}
           
           <Text style={styles.solicitudFecha}>
-            {new Date(solicitud.fecha_creacion).toLocaleDateString('es-AR')}
+            {new Date(solicitud.fecha_solicitud).toLocaleDateString('es-AR')}
           </Text>
           
           {esRecibida && solicitud.estado === 'pendiente' && (
             <View style={styles.botonesAccion}>
               <Button
+                key={`aceptar-${solicitud.solicitud_id}`}
                 mode="contained"
-                onPress={() => aceptarSolicitud(solicitud.id)}
+                onPress={() => aceptarSolicitud(solicitud.solicitud_id, solicitud.usuario_creador_id)}
                 style={[styles.botonAccion, styles.botonAceptar]}
                 labelStyle={styles.botonTexto}
               >
                 Aceptar
               </Button>
               <Button
+                key={`rechazar-${solicitud.solicitud_id}`}
                 mode="outlined"
-                onPress={() => rechazarSolicitud(solicitud.id)}
+                onPress={() => rechazarSolicitud(solicitud.solicitud_id, solicitud.usuario_creador_id)}
                 style={[styles.botonAccion, styles.botonRechazar]}
                 labelStyle={styles.botonTextoRechazar}
               >
@@ -227,7 +235,11 @@ export default function SolicitudesPagoScreen() {
       >
         {vistaActual === 'recibidas' ? (
           solicitudesRecibidas.length > 0 ? (
-            solicitudesRecibidas.map(solicitud => renderSolicitud(solicitud, true))
+            solicitudesRecibidas.map(solicitud => (
+              <View key={`recibida-${solicitud.id}`}>
+                {renderSolicitud(solicitud, true)}
+              </View>
+            ))
           ) : (
             <View style={styles.emptyContainer}>
               <Ionicons name="mail-outline" size={64} color="#ccc" />
@@ -236,7 +248,11 @@ export default function SolicitudesPagoScreen() {
           )
         ) : (
           solicitudesEnviadas.length > 0 ? (
-            solicitudesEnviadas.map(solicitud => renderSolicitud(solicitud, false))
+            solicitudesEnviadas.map(solicitud => (
+              <View key={`enviada-${solicitud.id}`}>
+                {renderSolicitud(solicitud, false)}
+              </View>
+            ))
           ) : (
             <View style={styles.emptyContainer}>
               <Ionicons name="send-outline" size={64} color="#ccc" />

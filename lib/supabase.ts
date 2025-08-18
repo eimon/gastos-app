@@ -165,6 +165,15 @@ export interface SolicitudPago {
   notas?: string
   created_at: string
   updated_at: string
+  // Campos adicionales devueltos por las funciones RPC
+  gasto_id?: string
+  gasto_descripcion?: string
+  solicitante_email?: string
+  solicitante_nickname?: string
+  creador_email?: string
+  creador_nickname?: string
+  numero_cuota?: number
+  vencimiento?: string
   // Relaciones
   gasto_detalle?: GastoDetalle
   usuario_solicitante?: Usuario
@@ -598,9 +607,11 @@ export const gastosService = {
       }
       
       // La función RPC ya devuelve solo gastos compartidos donde el usuario participa pero no es creador
-      const gastosCompartidosComoParticipante = gastosRPC
+      // Aplicar filtro adicional como medida de seguridad para excluir gastos donde el usuario actual es el creador
+      const gastosCompartidosComoParticipante = gastosRPC.filter((gasto: any) => gasto.creador_id !== userId)
       
-      console.log('[DEBUG] Gastos compartidos como participante:', gastosCompartidosComoParticipante.length)
+      console.log('[DEBUG] Gastos compartidos como participante (después del filtro):', gastosCompartidosComoParticipante.length)
+      console.log('[DEBUG] Gastos filtrados por ser creador:', gastosRPC.length - gastosCompartidosComoParticipante.length)
       
       // Transformar los datos de la RPC al formato GastoCuotaUnificada
       const gastosUnificados: GastoCuotaUnificada[] = gastosCompartidosComoParticipante.map((gasto: any) => ({
@@ -1042,50 +1053,13 @@ export const solicitudesPagoService = {
   // Crear una nueva solicitud de pago
   async crearSolicitudPago(solicitud: SolicitudPagoCreate, userId: string) {
     try {
-      // Verificar que el usuario sea el participante del gasto_detalle
-      const { data: gastoDetalle, error: errorDetalle } = await supabase
-        .from('gastos_detalle')
-        .select(`
-          *,
-          gasto:gastos(
-            *,
-            usuario:usuarios(nickname, email)
-          )
-        `)
-        .eq('id', solicitud.gasto_detalle_id)
-        .eq('usuario_id', userId)
-        .single()
-
-      if (errorDetalle) throw errorDetalle
-      if (!gastoDetalle) throw new Error('No tienes permisos para solicitar pago de este gasto')
-      if (!gastoDetalle.gasto) throw new Error('Gasto no encontrado')
-
-      // Verificar que no exista una solicitud pendiente
-      const { data: solicitudExistente } = await supabase
-        .from('solicitudes_pago')
-        .select('id')
-        .eq('gasto_detalle_id', solicitud.gasto_detalle_id)
-        .eq('estado', 'pendiente')
-        .single()
-
-      if (solicitudExistente) {
-        throw new Error('Ya existe una solicitud de pago pendiente para este gasto')
-      }
-
-      // Crear la solicitud
       const { data, error } = await supabase
-        .from('solicitudes_pago')
-        .insert({
-          gasto_detalle_id: solicitud.gasto_detalle_id,
-          usuario_solicitante_id: userId,
-          usuario_creador_id: solicitud.usuario_creador_id,
-          monto: solicitud.monto,
-          estado: 'pendiente',
-          fecha_solicitud: new Date().toISOString(),
-          notas: solicitud.notas
+        .rpc('crear_solicitud_pago', {
+          gasto_detalle_id_param: solicitud.gasto_detalle_id,
+          usuario_creador_id_param: solicitud.usuario_creador_id,
+          monto_param: solicitud.monto,
+          notas_param: solicitud.notas || null
         })
-        .select()
-        .single()
 
       if (error) throw error
       return data
@@ -1099,19 +1073,9 @@ export const solicitudesPagoService = {
   async obtenerSolicitudesRecibidas(userId: string) {
     try {
       const { data, error } = await supabase
-        .from('solicitudes_pago')
-        .select(`
-          *,
-          gasto_detalle:gastos_detalle(
-            *,
-            gasto:gastos(*),
-            usuario:usuarios(nickname, email)
-          ),
-          usuario_solicitante:usuarios(nickname, email)
-        `)
-        .eq('usuario_creador_id', userId)
-        .eq('estado', 'pendiente')
-        .order('created_at', { ascending: false })
+        .rpc('obtener_solicitudes_recibidas', {
+          usuario_creador_id_param: userId
+        })
 
       if (error) throw error
       return data || []
@@ -1125,17 +1089,9 @@ export const solicitudesPagoService = {
   async obtenerSolicitudesEnviadas(userId: string) {
     try {
       const { data, error } = await supabase
-        .from('solicitudes_pago')
-        .select(`
-          *,
-          gasto_detalle:gastos_detalle(
-            *,
-            gasto:gastos(*)
-          ),
-          usuario_creador:usuarios(nickname, email)
-        `)
-        .eq('usuario_solicitante_id', userId)
-        .order('created_at', { ascending: false })
+        .rpc('obtener_solicitudes_enviadas', {
+          usuario_solicitante_id_param: userId
+        })
 
       if (error) throw error
       return data || []
@@ -1146,73 +1102,33 @@ export const solicitudesPagoService = {
   },
 
   // Aceptar una solicitud de pago
-  async aceptarSolicitud(solicitudId: string, userId: string) {
+  async aceptarSolicitud(solicitudId: string, usuarioCreadorId: string) {
     try {
-      // Obtener la solicitud con todos los datos necesarios
-      const { data: solicitud, error: errorSolicitud } = await supabase
-        .from('solicitudes_pago')
-        .select(`
-          *,
-          gasto_detalle:gastos_detalle(
-            *,
-            gasto:gastos(*)
-          )
-        `)
-        .eq('id', solicitudId)
-        .eq('usuario_creador_id', userId)
-        .eq('estado', 'pendiente')
-        .single()
+      console.log('Aceptar solicitud:', solicitudId, usuarioCreadorId)
 
-      if (errorSolicitud) throw errorSolicitud
-      if (!solicitud) throw new Error('Solicitud no encontrada o no tienes permisos')
-
-      // Crear el pago automáticamente
-      const pagoData: PagoCreate = {
-        gasto_detalle_id: solicitud.gasto_detalle_id,
-        monto: solicitud.monto,
-        medio_pago: 'Efectivo', // Valor por defecto
-        fecha_pago: new Date().toISOString(),
-        notas: `Pago generado automáticamente por solicitud aceptada${solicitud.notas ? ` - ${solicitud.notas}` : ''}`
-      }
-
-      await pagosService.crearPago(pagoData, userId)
-
-      // Actualizar el estado de la solicitud
-      const { data, error } = await supabase
-        .from('solicitudes_pago')
-        .update({
-          estado: 'aceptada',
-          fecha_respuesta: new Date().toISOString()
+      const { data, error } = await supabase.rpc('aceptar_solicitud_pago', {
+          solicitud_id_param: solicitudId,
+          usuario_creador_id_param: usuarioCreadorId
         })
-        .eq('id', solicitudId)
-        .select()
-        .single()
 
       if (error) throw error
       return data
     } catch (error: any) {
-      console.error('Error al aceptar solicitud:', error)
+      console.error('Error al aceptar solivvcitud:', error)
       throw error
     }
   },
 
   // Rechazar una solicitud de pago
-  async rechazarSolicitud(solicitudId: string, userId: string) {
+  async rechazarSolicitud(solicitudId: string, usuarioCreadorId: string) {
     try {
       const { data, error } = await supabase
-        .from('solicitudes_pago')
-        .update({
-          estado: 'rechazada',
-          fecha_respuesta: new Date().toISOString()
+        .rpc('rechazar_solicitud_pago', {
+          solicitud_id_param: solicitudId,
+          usuario_creador_id_param: usuarioCreadorId
         })
-        .eq('id', solicitudId)
-        .eq('usuario_creador_id', userId)
-        .eq('estado', 'pendiente')
-        .select()
-        .single()
 
       if (error) throw error
-      if (!data) throw new Error('Solicitud no encontrada o no tienes permisos')
       return data
     } catch (error: any) {
       console.error('Error al rechazar solicitud:', error)

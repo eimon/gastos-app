@@ -24,8 +24,7 @@ import { useLocalSearchParams, router } from 'expo-router'
 import { supabase, Gasto, GastoDetalle } from '../../../lib/supabase'
 import { showAlert } from '../../../lib/alerts'
 
-type MedioPago = 'Efectivo' | 'Transferencia'
-
+type MedioPago = 'efectivo' | 'transferencia'
 export default function PagarGastoScreen() {
   const { id, participante } = useLocalSearchParams<{ id: string; participante?: string }>()
   const [gastoBase, setGastoBase] = useState<Gasto | null>(null)
@@ -36,7 +35,7 @@ export default function PagarGastoScreen() {
   const [guardando, setGuardando] = useState(false)
   const [detalleSeleccionado, setDetalleSeleccionado] = useState<GastoDetalle | null>(null)
   const [monto, setMonto] = useState('')
-  const [medioPago, setMedioPago] = useState<MedioPago>('Efectivo')
+  const [medioPago, setMedioPago] = useState<MedioPago>('efectivo')
   const [descripcion, setDescripcion] = useState('')
 
   useEffect(() => {
@@ -338,12 +337,12 @@ export default function PagarGastoScreen() {
               <View style={styles.radioContainer}>
                 <RadioButton.Item
                   label="Efectivo"
-                  value="Efectivo"
+                  value="efectivo"
                   style={styles.radioItem}
                 />
                 <RadioButton.Item
                   label="Transferencia"
-                  value="Transferencia"
+                  value="transferencia"
                   style={styles.radioItem}
                 />
               </View>

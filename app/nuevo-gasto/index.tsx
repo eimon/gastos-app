@@ -422,7 +422,7 @@ export default function NuevoGastoScreen() {
             .insert({
               gasto_detalle_id: detalle.id,
               monto: montoFinal,
-              medio_pago: 'Efectivo',
+              medio_pago: 'efectivo',
               fecha_pago: new Date().toISOString().split('T')[0]
             })
         }
@@ -519,7 +519,7 @@ export default function NuevoGastoScreen() {
         const pagosParaInsertar = detalles.map(detalle => ({
           gasto_detalle_id: detalle.id,
           monto: detalle.monto,
-          medio_pago: 'Efectivo',
+          medio_pago: 'efectivo',
           fecha_pago: new Date().toISOString().split('T')[0]
         }));
         

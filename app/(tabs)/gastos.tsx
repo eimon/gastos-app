@@ -134,11 +134,33 @@ export default function GastosScreen() {
         return
       }
 
-      // Encontrar el gasto_detalle del usuario actual
-      const participanteUsuario = gasto.participantes.find(p => p.usuario_id === user.id)
-      if (!participanteUsuario) {
-        showAlert('Error', 'No se encontró tu participación en este gasto')
-        return
+      let gastoDetalleId: string
+      
+      // Si el gasto tiene participantes cargados, buscar ahí
+      if (gasto.participantes && gasto.participantes.length > 0) {
+        const participanteUsuario = gasto.participantes.find(p => p.usuario_id === user.id)
+        if (!participanteUsuario) {
+          showAlert('Error', 'No se encontró tu participación en este gasto')
+          return
+        }
+        gastoDetalleId = participanteUsuario.id
+      } else {
+        // Si no hay participantes cargados (caso de obtenerGastosCompartidosComoParticipante),
+        // buscar el gasto_detalle directamente en la base de datos
+        const { data: gastoDetalle, error } = await supabase
+          .from('gastos_detalle')
+          .select('id')
+          .eq('gasto_id', gasto.gasto_id)
+          .eq('usuario_id', user.id)
+          .eq('numero_cuota', gasto.numero_cuota)
+          .single()
+        
+        if (error || !gastoDetalle) {
+          showAlert('Error', 'No se encontró tu participación en este gasto')
+          return
+        }
+        
+        gastoDetalleId = gastoDetalle.id
       }
 
       // Verificar que el usuario no haya pagado completamente
@@ -148,7 +170,7 @@ export default function GastosScreen() {
       }
 
       const solicitudData: SolicitudPagoCreate = {
-        gasto_detalle_id: participanteUsuario.id,
+        gasto_detalle_id: gastoDetalleId,
         usuario_creador_id: gasto.usuario_id,
         monto: gasto.monto_usuario - gasto.monto_pagado_usuario,
         notas: `Solicitud de pago para: ${gasto.descripcion}`
