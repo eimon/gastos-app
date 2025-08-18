@@ -27,6 +27,7 @@ import { router } from 'expo-router'
 import { showAlert, showConfirm } from '../../lib/alerts'
 import { useFocusEffect } from '@react-navigation/native'
 import RecurringIcon from '../../components/RecurringIcon'
+import { useMonth } from '../../contexts/MonthContext'
 
 export default function GastosScreen() {
   const [gastosUnificados, setGastosUnificados] = useState<GastoCuotaUnificada[]>([])
@@ -39,8 +40,7 @@ export default function GastosScreen() {
   const [gastoAEliminar, setGastoAEliminar] = useState<GastoCuotaUnificada | null>(null)
   const [eliminando, setEliminando] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [mesActual, setMesActual] = useState(new Date().getMonth() + 1)
-  const [añoActual, setAñoActual] = useState(new Date().getFullYear())
+  const { mesActual, añoActual, navegarMesAnterior, navegarMesSiguiente } = useMonth()
 
   useEffect(() => {
     cargarGastos()
@@ -185,23 +185,7 @@ export default function GastosScreen() {
     }
   }
 
-  const navegarMesAnterior = () => {
-    if (mesActual === 1) {
-      setMesActual(12)
-      setAñoActual(añoActual - 1)
-    } else {
-      setMesActual(mesActual - 1)
-    }
-  }
 
-  const navegarMesSiguiente = () => {
-    if (mesActual === 12) {
-      setMesActual(1)
-      setAñoActual(añoActual + 1)
-    } else {
-      setMesActual(mesActual + 1)
-    }
-  }
 
   const obtenerNombreMes = (mes: number) => {
     const meses = [
@@ -223,8 +207,10 @@ export default function GastosScreen() {
     gastosFiltrados = gastosUnificadosArray.filter(gasto => gasto.tipo === 'compartido')
   } else if (filtroTipo === 'participo') {
     gastosFiltrados = gastosCompartidosComoParticipanteArray
+  } else if (filtroTipo === 'todos') {
+    // Combinar gastos propios y compartidos donde participo
+    gastosFiltrados = [...gastosUnificadosArray, ...gastosCompartidosComoParticipanteArray]
   }
-  // Si filtroTipo === 'todos', no se aplica ningún filtro
   
   // Aplicar filtro de búsqueda
   gastosFiltrados = gastosFiltrados.filter(gasto => {
@@ -272,7 +258,7 @@ export default function GastosScreen() {
   const renderGasto = ({ item: gasto }: { item: GastoCuotaUnificada }) => {
     const esGastoPropio = gasto.usuario_id === currentUserId
     const esGastoCompartido = !esGastoPropio && gasto.tipo === 'compartido'
-    const esGastoParticipo = filtroTipo === 'participo'
+    const esGastoParticipo = filtroTipo === 'participo' || gastosCompartidosComoParticipanteArray.some(g => g.gasto_id === gasto.gasto_id)
     const esCuotas = (gasto.cuotas || 1) > 1
     
     // Calcular porcentaje de pago - usar datos específicos del usuario para gastos compartidos
@@ -283,14 +269,22 @@ export default function GastosScreen() {
       ? gasto.usuario_completamente_pagado
       : gasto.esta_completamente_pagada
     
+    // Determinar si se puede navegar al detalle (solo si es gasto propio o compartido creado por el usuario)
+    const puedeVerDetalle = esGastoPropio || (gasto.tipo === 'compartido' && gasto.usuario_id === currentUserId)
+    
+    const ComponenteContenedor = puedeVerDetalle ? TouchableOpacity : View
+    const propsContenedor = puedeVerDetalle 
+      ? { onPress: () => router.push(`/gasto/${gasto.gasto_id}-cuota-${gasto.numero_cuota}`) }
+      : {}
+    
     return (
-      <TouchableOpacity 
+      <ComponenteContenedor 
         style={[
           styles.gastoRowCard, 
           esGastoCompartido && styles.gastoCompartidoRowCard,
           esGastoParticipo && styles.gastoParticipoRowCard
         ]}
-        onPress={() => router.push(`/gasto/${gasto.gasto_id}-cuota-${gasto.numero_cuota}`)}
+        {...propsContenedor}
       >
         <View style={styles.gastoRowContent}>
           {/* Columna izquierda: Descripción y tipo */}
@@ -314,18 +308,7 @@ export default function GastosScreen() {
                 )}
               </View>
             </View>
-            {(esGastoCompartido || esGastoParticipo) && (
-              <View style={styles.gastoRowMeta}>
-                <Chip
-                  icon="account-group"
-                  style={esGastoParticipo ? styles.gastoRowParticipoChip : styles.gastoRowCompartidoChip}
-                  textStyle={esGastoParticipo ? styles.gastoRowParticipoChipText : styles.gastoRowCompartidoChipText}
-                  compact
-                >
-                  {esGastoParticipo ? 'Participo' : 'Compartido'}
-                </Chip>
-              </View>
-            )}
+
           </View>
 
           {/* Columna central: Información de cuotas y participantes */}
@@ -405,7 +388,7 @@ export default function GastosScreen() {
             />
           ) : null}
         </View>
-      </TouchableOpacity>
+      </ComponenteContenedor>
     )
   }
 

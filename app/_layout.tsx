@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import LoginScreen from '../components/LoginScreen'
 import Toast from 'react-native-toast-message'
+import { MonthProvider } from '../contexts/MonthContext'
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
@@ -44,12 +45,14 @@ export default function RootLayout() {
 
   return (
     <PaperProvider>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="nuevo-gasto/index" />
-      </Stack>
-      <Toast />
+      <MonthProvider>
+        <StatusBar style="dark" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="nuevo-gasto/index" />
+        </Stack>
+        <Toast />
+      </MonthProvider>
     </PaperProvider>
   )
 }

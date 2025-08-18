@@ -18,10 +18,11 @@ import {
   IconButton,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
-import { supabase, gastosService, pagosService, Gasto, Pago, TipoGasto } from '../../lib/supabase'
+import { supabase, gastosService, pagosService, resumenService, Gasto, Pago, TipoGasto, DatosResumenMensual } from '../../lib/supabase'
 import { showAlert } from '../../lib/alerts'
 import { useFocusEffect } from '@react-navigation/native'
 import { PieChart } from 'react-native-chart-kit'
+import { useMonth } from '../../contexts/MonthContext'
 
 const { width } = Dimensions.get('window')
 
@@ -51,8 +52,6 @@ const meses = [
 export default function ResumenScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [mesActual, setMesActual] = useState(new Date().getMonth() + 1)
-  const [añoActual, setAñoActual] = useState(new Date().getFullYear())
   const [estadisticas, setEstadisticas] = useState<EstadisticasMes>({
     gastosFijos: 0,
     gastosVariables: 0,
@@ -60,8 +59,10 @@ export default function ResumenScreen() {
     gastosAdeudados: 0,
     totalGastos: 0
   })
+  const [datosResumen, setDatosResumen] = useState<DatosResumenMensual | null>(null)
   const [pagosMes, setPagosMes] = useState<PagoMes[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const { mesActual, añoActual, navegarMesAnterior, navegarMesSiguiente, irMesActual } = useMonth()
 
   useEffect(() => {
     cargarDatos()
@@ -85,18 +86,27 @@ export default function ResumenScreen() {
 
       setCurrentUserId(user.id)
       
-      // Cargar gastos del mes para estadísticas
-      const gastosData = await gastosService.obtenerGastosCuotasUnificadas(user.id, mesActual, añoActual)
+      // Obtener datos unificados del resumen mensual
+      const datosResumenMensual = await resumenService.obtenerDatosResumenMensual(
+        user.id, 
+        mesActual, 
+        añoActual
+      )
+      setDatosResumen(datosResumenMensual)
       
-      // Cargar pagos del mes
+      // Actualizar estadísticas con los nuevos datos
+      setEstadisticas({
+        gastosFijos: datosResumenMensual.gastos_fijos,
+        gastosVariables: datosResumenMensual.gastos_variables,
+        gastosPorPagar: datosResumenMensual.por_pagar,
+        gastosAdeudados: datosResumenMensual.me_adeudan,
+        totalGastos: datosResumenMensual.total_gastos
+      })
+      
+      // Obtener pagos del mes para mostrar en la lista
       const pagosData = await pagosService.obtenerPagos(user.id, mesActual, añoActual)
-
-      // Calcular estadísticas
-      const stats = calcularEstadisticas(gastosData, user.id)
-      setEstadisticas(stats)
       
       // Formatear pagos para mostrar
-      console.log(pagosData)
       const pagosFormateados = pagosData
         .map(pago => ({
           id: pago.id,
@@ -118,78 +128,14 @@ export default function ResumenScreen() {
     }
   }
 
-  const calcularEstadisticas = (gastos: any[], userId: string): EstadisticasMes => {
-    let gastosFijos = 0
-    let gastosVariables = 0
-    let gastosPorPagar = 0
-    let gastosAdeudados = 0
-
-    gastos.forEach(gasto => {
-      // Solo considerar gastos propios del usuario
-      const esGastoPropio = gasto.creador_id === userId
-      
-      if (esGastoPropio) {
-        const montoTotal = gasto.monto_total || 0
-        
-        if (gasto.tipo === 'fijo') {
-          gastosFijos += montoTotal
-        } else {
-          gastosVariables += montoTotal
-        }
-        
-        // Calcular gastos por pagar (cuotas no pagadas completamente)
-        const progreso = gasto.progreso_pago || 0
-        if (progreso < 100) {
-          gastosPorPagar += montoTotal * (1 - progreso / 100)
-        }
-      } else {
-        // Para gastos de otros, calcular lo que nos adeudan
-        const montoUsuario = gasto.participantes?.find((p: any) => p.usuario_id === userId)?.monto || 0
-        const pagadoUsuario = gasto.participantes?.find((p: any) => p.usuario_id === userId)?.monto_pagado || 0
-        
-        if (montoUsuario > pagadoUsuario) {
-          gastosAdeudados += (montoUsuario - pagadoUsuario)
-        }
-      }
-    })
-
-    return {
-      gastosFijos,
-      gastosVariables,
-      gastosPorPagar,
-      gastosAdeudados,
-      totalGastos: gastosFijos + gastosVariables
-    }
-  }
+  // Función eliminada - ahora usamos resumenService.obtenerDatosResumenMensual
 
   const onRefresh = () => {
     setRefreshing(true)
     cargarDatos()
   }
 
-  const navegarMes = (direccion: 'anterior' | 'siguiente') => {
-    if (direccion === 'anterior') {
-      if (mesActual === 1) {
-        setMesActual(12)
-        setAñoActual(añoActual - 1)
-      } else {
-        setMesActual(mesActual - 1)
-      }
-    } else {
-      if (mesActual === 12) {
-        setMesActual(1)
-        setAñoActual(añoActual + 1)
-      } else {
-        setMesActual(mesActual + 1)
-      }
-    }
-  }
 
-  const irMesActual = () => {
-    const hoy = new Date()
-    setMesActual(hoy.getMonth() + 1)
-    setAñoActual(hoy.getFullYear())
-  }
 
   const formatearMonto = (monto: number) => {
     return new Intl.NumberFormat('es-AR', {
@@ -218,22 +164,22 @@ export default function ResumenScreen() {
     }
   }
 
-  // Datos para el gráfico circular
+  // Datos para el gráfico circular - solo mostrar categorías con valores > 0
   const datosGrafico = [
-    {
-      name: 'Gastos Fijos',
+    ...(estadisticas.gastosFijos > 0 ? [{
+      name: `Fijo`,
       population: estadisticas.gastosFijos,
       color: '#FF6B6B',
       legendFontColor: '#333',
-      legendFontSize: 14,
-    },
-    {
-      name: 'Gastos Variables',
+      legendFontSize: 12,
+    }] : []),
+    ...(estadisticas.gastosVariables > 0 ? [{
+      name: `Variable`, 
       population: estadisticas.gastosVariables,
       color: '#4ECDC4',
       legendFontColor: '#333',
-      legendFontSize: 14,
-    },
+      legendFontSize: 12,
+    }] : [])
   ]
 
   const chartConfig = {
@@ -249,7 +195,7 @@ export default function ResumenScreen() {
           <IconButton
             icon="chevron-left"
             size={24}
-            onPress={() => navegarMes('anterior')}
+            onPress={navegarMesAnterior}
             style={styles.navegacionButton}
           />
           <TouchableOpacity style={styles.mesContainer} onPress={irMesActual}>
@@ -260,7 +206,7 @@ export default function ResumenScreen() {
           <IconButton
             icon="chevron-right"
             size={24}
-            onPress={() => navegarMes('siguiente')}
+            onPress={navegarMesSiguiente}
             style={styles.navegacionButton}
           />
         </View>
@@ -273,7 +219,7 @@ export default function ResumenScreen() {
         }
       >
         {/* Gráfico circular */}
-        {estadisticas.totalGastos > 0 && (
+        {datosGrafico.length > 0 && (
           <Card style={styles.card}>
             <Card.Content>
               <Title style={styles.cardTitle}>Distribución de Gastos</Title>
@@ -339,12 +285,13 @@ export default function ResumenScreen() {
                       {formatearMonto(pago.monto)}
                     </Text>
                     <View style={styles.pagoDetalles}>
-                      <Chip
-                        style={[styles.medioChip, { backgroundColor: obtenerColorMedioPago(pago.medio_pago) }]}
-                        textStyle={styles.medioChipText}
-                      >
-                        {pago.medio_pago === 'efectivo' ? 'EF' : 'TR'}
-                      </Chip>
+                      <View style={[styles.medioChip, { backgroundColor: obtenerColorMedioPago(pago.medio_pago) }]}>
+                        <Ionicons 
+                          name={pago.medio_pago === 'efectivo' ? 'cash' : 'card'} 
+                          size={14} 
+                          color="white" 
+                        />
+                      </View>
                       <Text style={styles.pagoFecha}>
                         {formatearFecha(pago.fecha)}
                       </Text>
@@ -474,8 +421,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   medioChip: {
-    height: 24,
-    minWidth: 32,
+    height: 28,
+    width: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   medioChipText: {
     color: 'white',

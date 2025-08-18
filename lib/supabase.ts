@@ -624,6 +624,7 @@ export const gastosService = {
   // Obtener gastos donde el usuario participa pero no es el creador
   async obtenerGastosCompartidosComoParticipante(userId: string, mes?: number, año?: number): Promise<GastoCuotaUnificada[]> {
     console.log('[DEBUG] Iniciando obtenerGastosCompartidosComoParticipante para userId:', userId)
+    console.log(`[DEBUG] Filtros - mes: ${mes}, año: ${año}`)
     try {
       // Usar la función RPC como respaldo si la consulta directa falla
       console.log('[DEBUG] Intentando usar función RPC como método principal')
@@ -644,10 +645,29 @@ export const gastosService = {
       
       // La función RPC ya devuelve solo gastos compartidos donde el usuario participa pero no es creador
       // Aplicar filtro adicional como medida de seguridad para excluir gastos donde el usuario actual es el creador
-      const gastosCompartidosComoParticipante = gastosRPC.filter((gasto: any) => gasto.creador_id !== userId)
+      let gastosCompartidosComoParticipante = gastosRPC.filter((gasto: any) => gasto.creador_id !== userId)
       
       console.log('[DEBUG] Gastos compartidos como participante (después del filtro):', gastosCompartidosComoParticipante.length)
       console.log('[DEBUG] Gastos filtrados por ser creador:', gastosRPC.length - gastosCompartidosComoParticipante.length)
+      
+      // Filtrar por mes y año si se especifica
+      if (mes !== undefined && año !== undefined) {
+        gastosCompartidosComoParticipante = gastosCompartidosComoParticipante.filter((gasto: any) => {
+          if (!gasto.mi_vencimiento) {
+            console.log(`[DEBUG] Gasto compartido sin vencimiento excluido:`, gasto.gasto_id);
+            return false;
+          }
+          // Usar componentes de fecha para evitar problemas de zona horaria
+          const [añoStr, mesStr, diaStr] = gasto.mi_vencimiento.split('-');
+          const añoVencimiento = parseInt(añoStr);
+          const mesVencimiento = parseInt(mesStr);
+          const incluir = mesVencimiento === mes && añoVencimiento === año;
+          console.log(`[DEBUG] Filtro participante - Gasto ${gasto.gasto_id}: vencimiento=${gasto.mi_vencimiento}, mes=${mesVencimiento}, año=${añoVencimiento}, incluir=${incluir}`);
+          return incluir;
+        });
+        
+        console.log(`[DEBUG] Gastos compartidos después del filtro de fecha: ${gastosCompartidosComoParticipante.length}`);
+      }
       
       // Transformar los datos de la RPC al formato GastoCuotaUnificada
       const gastosUnificados: GastoCuotaUnificada[] = gastosCompartidosComoParticipante.map((gasto: any) => ({
@@ -1308,3 +1328,56 @@ export const solicitudesPagoService = {
 
 // Servicios de IOU (ya no se usan con el esquema simplificado)
 // export const iouService = { ... }
+
+// Interface para datos de resumen mensual
+export interface DatosResumenMensual {
+  gastos_fijos: number
+  gastos_variables: number
+  total_gastos: number
+  por_pagar: number
+  me_adeudan: number
+  cantidad_gastos_fijos: number
+  cantidad_gastos_variables: number
+  cantidad_detalles_por_pagar: number
+  cantidad_detalles_adeudados: number
+}
+
+export const resumenService = {
+  // Obtener datos unificados para el resumen mensual
+  async obtenerDatosResumenMensual(userId: string, mes?: number, año?: number): Promise<DatosResumenMensual> {
+    try {
+      console.log(`[DEBUG] Obteniendo datos de resumen para userId: ${userId}, mes: ${mes}, año: ${año}`);
+      
+      const { data, error } = await supabase
+        .rpc('obtener_datos_resumen_mensual', {
+          p_usuario_id: userId,
+          p_mes: mes || null,
+          p_año: año || null
+        })
+      
+      if (error) {
+        console.error('Error al obtener datos de resumen:', error);
+        throw error;
+      }
+      
+      // La función RPC devuelve un array con un solo elemento
+      const resultado = data?.[0] || {
+        gastos_fijos: 0,
+        gastos_variables: 0,
+        total_gastos: 0,
+        por_pagar: 0,
+        me_adeudan: 0,
+        cantidad_gastos_fijos: 0,
+        cantidad_gastos_variables: 0,
+        cantidad_detalles_por_pagar: 0,
+        cantidad_detalles_adeudados: 0
+      };
+      
+      console.log('[DEBUG] Datos de resumen obtenidos:', resultado);
+      return resultado as DatosResumenMensual;
+    } catch (error) {
+      console.error('Error en obtenerDatosResumenMensual:', error);
+      throw error;
+    }
+  }
+}
