@@ -112,6 +112,13 @@ export default function SolicitudesPagoScreen() {
     }
   }
 
+  const formatearFecha = (fecha: string) => {
+    // Crear fecha local para evitar problemas de zona horaria
+    const [año, mes, dia] = fecha.split('-').map(Number)
+    const fechaLocal = new Date(año, mes - 1, dia)
+    return fechaLocal.toLocaleDateString('es-AR')
+  }
+
   const renderSolicitud = (solicitud: SolicitudPago, esRecibida: boolean) => {
     return (
       <Card style={styles.solicitudCard}>
@@ -145,7 +152,7 @@ export default function SolicitudesPagoScreen() {
           )}
           
           <Text style={styles.solicitudFecha}>
-            {new Date(solicitud.fecha_solicitud).toLocaleDateString('es-AR')}
+            {formatearFecha(solicitud.fecha_solicitud)}
           </Text>
           
           {esRecibida && solicitud.estado === 'pendiente' && (

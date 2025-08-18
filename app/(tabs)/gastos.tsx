@@ -26,6 +26,7 @@ import { supabase, gastosService, solicitudesPagoService, Gasto, GastoCuotaUnifi
 import { router } from 'expo-router'
 import { showAlert, showConfirm } from '../../lib/alerts'
 import { useFocusEffect } from '@react-navigation/native'
+import RecurringIcon from '../../components/RecurringIcon'
 
 export default function GastosScreen() {
   const [gastosUnificados, setGastosUnificados] = useState<GastoCuotaUnificada[]>([])
@@ -256,6 +257,16 @@ export default function GastosScreen() {
     return { entero: formatted, decimales: null }
   }
 
+  const formatearFecha = (fecha: string) => {
+    // Crear fecha local para evitar problemas de zona horaria
+    const [año, mes, dia] = fecha.split('-').map(Number)
+    const fechaLocal = new Date(año, mes - 1, dia)
+    return fechaLocal.toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: '2-digit'
+    })
+  }
+
 
 
   const renderGasto = ({ item: gasto }: { item: GastoCuotaUnificada }) => {
@@ -359,12 +370,14 @@ export default function GastosScreen() {
                 )
               })()}
             </View>
-            <Text style={styles.gastoRowFecha}>
-              {new Date(gasto.fecha).toLocaleDateString('es-AR', { 
-                day: '2-digit', 
-                month: '2-digit' 
-              })}
-            </Text>
+            <View style={styles.gastoRowFechaContainer}>
+              <Text style={styles.gastoRowFecha}>
+                {formatearFecha(gasto.fecha)}
+              </Text>
+              {gasto.es_recurrente && (
+                <RecurringIcon size={12} color="#666" />
+              )}
+            </View>
           </View>
 
           {/* Botones de acción */}
@@ -785,6 +798,11 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
     marginTop: -2,
     marginLeft: 1,
+  },
+  gastoRowFechaContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   gastoRowFecha: {
     fontSize: 11,

@@ -20,11 +20,15 @@ import {
   Divider,
   List,
   Badge,
+  Modal,
+  Portal,
+  TextInput,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
 import { supabase, gastosService, pagosService, Gasto, GastoDetalle, GastoCuotaUnificada } from '../../lib/supabase'
-import { showAlert, showSuccessToast } from '../../lib/alerts'
+import { showAlert, showSuccessToast, showConfirm } from '../../lib/alerts'
+import RecurringIcon from '../../components/RecurringIcon'
 
 export default function GastoDetalleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -34,6 +38,9 @@ export default function GastoDetalleScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [gastoId, setGastoId] = useState<string>('')
   const [numeroCuota, setNumeroCuota] = useState<number>(1)
+  const [editModalVisible, setEditModalVisible] = useState(false)
+  const [editingDetalle, setEditingDetalle] = useState<GastoDetalle | null>(null)
+  const [nuevoMonto, setNuevoMonto] = useState('')
 
 
   useEffect(() => {
@@ -128,7 +135,10 @@ export default function GastoDetalleScreen() {
   }
 
   const formatearFecha = (fecha: string) => {
-    return new Date(fecha).toLocaleDateString('es-AR', {
+    // Crear fecha local para evitar problemas de zona horaria
+    const [año, mes, dia] = fecha.split('-').map(Number)
+    const fechaLocal = new Date(año, mes - 1, dia)
+    return fechaLocal.toLocaleDateString('es-AR', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -141,6 +151,67 @@ export default function GastoDetalleScreen() {
 
   const getTipoIcon = (tipo: string) => {
     return tipo === 'personal' ? 'account' : 'account-group'
+  }
+
+  const getMontoRestante = (detalle: GastoDetalle) => {
+    if (detalle.pagado || detalle.monto === 0) return 0
+    
+    // Calcular el total pagado de este detalle
+    const pagos = Array.isArray(detalle.pagos) ? detalle.pagos : []
+    const totalPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0)
+    
+    // El monto restante es el monto total menos lo ya pagado
+    return Math.max(0, detalle.monto - totalPagado)
+  }
+
+  const confirmarPagoDirecto = (detalle: GastoDetalle) => {
+    const montoRestante = getMontoRestante(detalle)
+    const nombreParticipante = detalle.usuario?.nombre || detalle.usuario?.email || 'Participante'
+    
+    showConfirm(
+      'Confirmar Pago',
+      `¿Confirmar el pago de ${formatearMonto(montoRestante)} para ${nombreParticipante}?`,
+      () => registrarPagoDirecto(detalle, montoRestante),
+      () => {}
+    )
+  }
+
+  const registrarPagoDirecto = async (detalle: GastoDetalle, monto: number) => {
+    try {
+      // Obtener el usuario actual para usar el servicio de pagos
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !user.id) {
+        throw new Error('Usuario no autenticado')
+      }
+
+      // Usar el servicio de pagos que incluye la lógica de generación automática de gastos recurrentes
+      await pagosService.crearPago({
+        gasto_detalle_id: detalle.id,
+        monto: monto,
+        medio_pago: 'efectivo', // Por defecto efectivo
+        fecha_pago: new Date().toISOString().split('T')[0],
+        notas: 'Pago registrado directamente'
+      }, user.id)
+
+      // Si el pago cubre el monto total, marcar como pagado
+      if (monto === detalle.monto) {
+        const { error: updateError } = await supabase
+          .from('gastos_detalle')
+          .update({ pagado: true })
+          .eq('id', detalle.id)
+        
+        if (updateError) throw updateError
+      }
+
+      showSuccessToast('Pago registrado correctamente')
+      // Recargar los datos
+      if (gastoId && numeroCuota) {
+        cargarGastoDetalle(gastoId, numeroCuota)
+      }
+    } catch (error: any) {
+      console.error('Error registrando pago:', error)
+      showAlert('Error', error.message || 'No se pudo registrar el pago')
+    }
   }
 
   // Función para obtener el saldo pagado de un detalle
@@ -257,9 +328,44 @@ export default function GastoDetalleScreen() {
     
     return deudas
   }
-  
 
-  
+  // Función para manejar la edición del monto
+  const handleEditMonto = (detalle: GastoDetalle) => {
+    setEditingDetalle(detalle)
+    setNuevoMonto(detalle.monto.toString())
+    setEditModalVisible(true)
+  }
+
+  // Función para guardar el nuevo monto
+  const handleGuardarMonto = async () => {
+    if (!editingDetalle || !nuevoMonto) return
+
+    const montoNumerico = parseFloat(nuevoMonto)
+    if (isNaN(montoNumerico) || montoNumerico <= 0) {
+      showAlert('Error', 'Por favor ingresa un monto válido')
+      return
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // Usar la función de supabase que maneja todo el recálculo
+      await gastosService.actualizarMontoDetalle(editingDetalle.id, montoNumerico, user.id)
+
+      showSuccessToast('Monto actualizado correctamente')
+      setEditModalVisible(false)
+      setEditingDetalle(null)
+      setNuevoMonto('')
+      
+      // Recargar los datos
+      cargarGastoDetalle(gastoId, numeroCuota)
+    } catch (error: any) {
+      console.error('Error actualizando monto:', error)
+      showAlert('Error', error.message || 'No se pudo actualizar el monto')
+    }
+  }
+
 
 
   if (loading) {
@@ -368,6 +474,16 @@ export default function GastoDetalleScreen() {
             onPress={() => router.push('/(tabs)/gastos')}
           />
           <Text style={styles.headerTitle}>Detalle de gasto</Text>
+          {gastoBase?.es_recurrente && (
+            <View style={styles.recurringIconContainer}>
+              <RecurringIcon 
+                size={20} 
+                color="#2196F3" 
+                showTooltip={false}
+                tooltipText="Este gasto se generará automáticamente cuando llegue al 100%"
+              />
+            </View>
+          )}
         </View>
       </View>
 
@@ -483,12 +599,26 @@ export default function GastoDetalleScreen() {
                 {detallesDelMes.map((detalle, index) => {
                   const estadoPago = getEstadoPago(detalle)
                   const deudas = calcularDeudasParticipante(detalle.usuario?.id || '')
+                  const tienePagos = detalle.pagos && detalle.pagos.length > 0
                   
                   return (
                     <View key={detalle.id} style={styles.detalleItem}>
                       <List.Item
                         title={detalle.usuario?.nickname || detalle.nombre_participante || 'Participante'}
-                        description={`${formatearMonto(detalle.monto)} - ${formatearMonto(getSaldoPagado(detalle))} pagado`}
+                        description={
+                          <View style={styles.montoDescriptionContainer}>
+                            <Text>{formatearMonto(detalle.monto)} - {formatearMonto(getSaldoPagado(detalle))} pagado</Text>
+                            {!tienePagos && (
+                              <IconButton
+                                icon="pencil"
+                                size={16}
+                                iconColor="#666"
+                                style={styles.editIcon}
+                                onPress={() => handleEditMonto(detalle)}
+                              />
+                            )}
+                          </View>
+                        }
                         left={() => (
                           <View style={styles.participanteIcon}>
                             <Ionicons 
@@ -510,7 +640,7 @@ export default function GastoDetalleScreen() {
                             </Chip>
                           </View>
                         )}
-                        onPress={!detalle.pagado && detalle.monto > 0 ? () => router.push(`/gasto/${gastoId}-cuota-${numeroCuota}/pagar?participante=${detalle.id}`) : undefined}
+                        onPress={!detalle.pagado && detalle.monto > 0 ? () => confirmarPagoDirecto(detalle) : undefined}
                         style={[styles.participanteRow, !detalle.pagado && detalle.monto > 0 && styles.participanteRowClickable]}
                       />
                       
@@ -599,18 +729,7 @@ export default function GastoDetalleScreen() {
 
       {/* Botones de acción */}
       <View style={styles.actionsContainer}>
-        {progreso < 100 && gastoBase?.es_recurrente && (
-          <Button
-            mode="contained"
-            onPress={() => router.push(`/gasto/${gastoId}-cuota-${numeroCuota}/pagar-recurrente`)}
-            style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
-            icon="refresh"
-          >
-            Pagar Recurrente
-          </Button>
-        )}
-
-        {progreso < 100 && (
+        {progreso < 100 && gastoBase?.tipo === 'personal' && (
           <Button
             mode="contained"
             onPress={() => router.push(`/gasto/${gastoId}-cuota-${numeroCuota}/pagar-todo`)}
@@ -642,6 +761,47 @@ export default function GastoDetalleScreen() {
           ))}
         </View>
       )}
+
+      {/* Modal de edición de monto */}
+      <Portal>
+        <Modal
+          visible={editModalVisible}
+          onDismiss={() => setEditModalVisible(false)}
+          contentContainerStyle={{
+            backgroundColor: 'white',
+            padding: 20,
+            margin: 20,
+            borderRadius: 8,
+          }}
+        >
+          <Title>Editar Monto</Title>
+          <Paragraph style={{ marginBottom: 16 }}>
+            Participante: {editingDetalle?.usuario?.nickname || editingDetalle?.nombre_participante || 'Participante'}
+          </Paragraph>
+          <TextInput
+            label="Nuevo Monto"
+            value={nuevoMonto}
+            onChangeText={setNuevoMonto}
+            keyboardType="numeric"
+            mode="outlined"
+            style={{ marginBottom: 16 }}
+          />
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+            <Button
+              mode="outlined"
+              onPress={() => setEditModalVisible(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              mode="contained"
+              onPress={handleGuardarMonto}
+            >
+              Guardar
+            </Button>
+          </View>
+        </Modal>
+      </Portal>
     </ScrollView>
     </View>
   )
@@ -662,12 +822,17 @@ const styles = StyleSheet.create({
   headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginLeft: 8,
     color: '#333',
+    flex: 1,
+  },
+  recurringIconContainer: {
+    marginLeft: 8,
   },
   scrollContainer: {
     flex: 1,
@@ -859,5 +1024,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
     borderWidth: 1,
     borderColor: '#e9ecef',
+  },
+  montoDescriptionContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editIcon: {
+    margin: 0,
+    padding: 0,
   },
 })

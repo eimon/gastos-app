@@ -14,7 +14,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Enums
 export type TipoGasto = 'personal' | 'compartido'
-export type MedioPago = 'Efectivo' | 'Transferencia'
+export type MedioPago = 'efectivo' | 'transferencia'
 
 // Interfaces principales
 export interface Usuario {

@@ -234,84 +234,102 @@ export default function PagarGastoScreen() {
         </Card>
 
       {/* Selección de detalle */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title style={styles.sectionTitle}>Seleccionar Participante</Title>
-          {detallesPendientes.length === 0 ? (
-            <Text style={styles.noDataText}>No hay pagos pendientes</Text>
-          ) : (
-            (() => {
-              // Agrupar detalles por mes
-              const detallesPorMes = detallesPendientes.reduce((acc, detalle) => {
-                const gastoDelDetalle = gastosCuota.find(g => g.detalles?.some(d => d.id === detalle.id))
-                if (gastoDelDetalle) {
-                  const fecha = new Date(gastoDelDetalle.fecha)
-                  const mesAno = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
-                  if (!acc[mesAno]) {
-                    acc[mesAno] = []
+      {!participante ? (
+        <Card style={styles.card}>
+          <Card.Content>
+            <Title style={styles.sectionTitle}>Seleccionar Participante</Title>
+            {detallesPendientes.length === 0 ? (
+              <Text style={styles.noDataText}>No hay pagos pendientes</Text>
+            ) : (
+              (() => {
+                // Agrupar detalles por mes
+                const detallesPorMes = detallesPendientes.reduce((acc, detalle) => {
+                  const gastoDelDetalle = gastosCuota.find(g => g.detalles?.some(d => d.id === detalle.id))
+                  if (gastoDelDetalle) {
+                    const fecha = new Date(gastoDelDetalle.fecha)
+                    const mesAno = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`
+                    if (!acc[mesAno]) {
+                      acc[mesAno] = []
+                    }
+                    acc[mesAno].push(detalle)
                   }
-                  acc[mesAno].push(detalle)
-                }
-                return acc
-              }, {} as Record<string, typeof detallesPendientes>)
+                  return acc
+                }, {} as Record<string, typeof detallesPendientes>)
 
-              // Ordenar los meses
-              const mesesOrdenados = Object.keys(detallesPorMes).sort()
+                // Ordenar los meses
+                const mesesOrdenados = Object.keys(detallesPorMes).sort()
 
-              return mesesOrdenados.map((mesAno, mesIndex) => {
-                const detallesMes = detallesPorMes[mesAno]
-                const [ano, mes] = mesAno.split('-')
-                const nombreMes = new Date(parseInt(ano), parseInt(mes) - 1).toLocaleDateString('es-AR', { 
-                  month: 'long', 
-                  year: 'numeric' 
-                })
-                
-                return (
-                  <View key={`mes-${mesAno}`}>
-                    {/* Header del mes */}
-                    <View style={styles.cuotaHeader}>
-                      <Text style={styles.cuotaTitle}>{nombreMes}</Text>
-                    </View>
-                    
-                    {/* Participantes del mes */}
-                    {detallesMes.map((detalle, detalleIndex) => {
-                      const montoRestante = getMontoRestante(detalle)
-                      const isSelected = detalleSeleccionado?.id === detalle.id
+                return mesesOrdenados.map((mesAno, mesIndex) => {
+                  const detallesMes = detallesPorMes[mesAno]
+                  const [ano, mes] = mesAno.split('-')
+                  const nombreMes = new Date(parseInt(ano), parseInt(mes) - 1).toLocaleDateString('es-AR', { 
+                    month: 'long', 
+                    year: 'numeric' 
+                  })
+                  
+                  return (
+                    <View key={`mes-${mesAno}`}>
+                      {/* Header del mes */}
+                      <View style={styles.cuotaHeader}>
+                        <Text style={styles.cuotaTitle}>{nombreMes}</Text>
+                      </View>
                       
-                      return (
-                        <View key={detalle.id}>
-                          <List.Item
-                            title={detalle.usuario?.nickname || detalle.nombre_participante || 'Participante'}
-                            description={`Restante: ${formatearMonto(montoRestante)}`}
-                            left={() => (
-                              <RadioButton
-                                value={detalle.id}
-                                status={isSelected ? 'checked' : 'unchecked'}
-                                onPress={() => seleccionarDetalle(detalle)}
-                              />
-                            )}
-                            onPress={() => seleccionarDetalle(detalle)}
-                            style={[
-                              styles.detalleItem,
-                              isSelected && styles.detalleItemSelected
-                            ]}
-                          />
-                          {detalleIndex < detallesMes.length - 1 && <Divider style={styles.participanteDivider} />}
-                        </View>
-                      )
-                    })}
-                    
-                    {/* Separador entre meses */}
-                    {mesIndex < mesesOrdenados.length - 1 && (
-                      <Divider style={styles.cuotaDivider} />
-                    )}
-                  </View>
-                )
-              })
-            })()
-          )}
-        </Card.Content>
-      </Card>
+                      {/* Participantes del mes */}
+                      {detallesMes.map((detalle, detalleIndex) => {
+                        const montoRestante = getMontoRestante(detalle)
+                        const isSelected = detalleSeleccionado?.id === detalle.id
+                        
+                        return (
+                          <View key={detalle.id}>
+                            <List.Item
+                              title={detalle.usuario?.nickname || detalle.nombre_participante || 'Participante'}
+                              description={`Restante: ${formatearMonto(montoRestante)}`}
+                              left={() => (
+                                <RadioButton
+                                  value={detalle.id}
+                                  status={isSelected ? 'checked' : 'unchecked'}
+                                  onPress={() => seleccionarDetalle(detalle)}
+                                />
+                              )}
+                              onPress={() => seleccionarDetalle(detalle)}
+                              style={[
+                                styles.detalleItem,
+                                isSelected && styles.detalleItemSelected
+                              ]}
+                            />
+                            {detalleIndex < detallesMes.length - 1 && <Divider style={styles.participanteDivider} />}
+                          </View>
+                        )
+                      })}
+                      
+                      {/* Separador entre meses */}
+                      {mesIndex < mesesOrdenados.length - 1 && (
+                        <Divider style={styles.cuotaDivider} />
+                      )}
+                    </View>
+                  )
+                })
+              })()
+            )}
+          </Card.Content>
+        </Card>
+      ) : (
+        detalleSeleccionado && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Title style={styles.sectionTitle}>Participante Seleccionado</Title>
+              <View style={styles.participanteInfo}>
+                <Text style={styles.participanteNombre}>
+                  {detalleSeleccionado.usuario?.nickname || detalleSeleccionado.nombre_participante || 'Participante'}
+                </Text>
+                <Text style={styles.participanteDetalle}>
+                  Monto restante: {formatearMonto(getMontoRestante(detalleSeleccionado))}
+                </Text>
+              </View>
+            </Card.Content>
+          </Card>
+        )
+      )}
 
       {/* Formulario de pago */}
       {detalleSeleccionado && (
@@ -503,5 +521,22 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     marginBottom: 12,
+  },
+  participanteInfo: {
+    padding: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  participanteNombre: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  participanteDetalle: {
+    fontSize: 14,
+    color: '#666',
   },
 })

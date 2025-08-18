@@ -38,6 +38,7 @@ interface PagoMes {
   descripcion: string
   monto: number
   fecha: string
+  vencimiento?: string
   medio_pago: string
   participante: string
 }
@@ -88,25 +89,24 @@ export default function ResumenScreen() {
       const gastosData = await gastosService.obtenerGastosCuotasUnificadas(user.id, mesActual, añoActual)
       
       // Cargar pagos del mes
-      const pagosData = await pagosService.obtenerPagos(user.id)
-      const pagosFiltrados = pagosData.filter(pago => {
-        const fechaPago = new Date(pago.fecha_pago)
-        return fechaPago.getMonth() + 1 === mesActual && fechaPago.getFullYear() === añoActual
-      })
+      const pagosData = await pagosService.obtenerPagos(user.id, mesActual, añoActual)
 
       // Calcular estadísticas
       const stats = calcularEstadisticas(gastosData, user.id)
       setEstadisticas(stats)
       
       // Formatear pagos para mostrar
-      const pagosFormateados = pagosFiltrados.map(pago => ({
-        id: pago.id,
-        descripcion: pago.gasto?.descripcion || 'Gasto eliminado',
-        monto: pago.monto,
-        fecha: pago.fecha_pago,
-        medio_pago: pago.medio_pago,
-        participante: pago.participante?.nickname || pago.participante?.email || 'Usuario'
-      }))
+      console.log(pagosData)
+      const pagosFormateados = pagosData
+        .map(pago => ({
+          id: pago.id,
+          descripcion: pago.gasto_detalle?.gasto?.descripcion || 'Gasto eliminado',
+          monto: pago.monto,
+          fecha: pago.fecha_pago,
+          vencimiento: pago.gasto_detalle?.vencimiento,
+          medio_pago: pago.medio_pago,
+          participante: pago.gasto_detalle?.usuario?.nickname || pago.gasto_detalle?.usuario?.email || 'Usuario'
+        }))
       
       setPagosMes(pagosFormateados)
     } catch (error) {
@@ -201,7 +201,10 @@ export default function ResumenScreen() {
   }
 
   const formatearFecha = (fecha: string) => {
-    return new Date(fecha).toLocaleDateString('es-AR', {
+    // Crear fecha local para evitar problemas de zona horaria
+    const [año, mes, dia] = fecha.split('-').map(Number)
+    const fechaLocal = new Date(año, mes - 1, dia)
+    return fechaLocal.toLocaleDateString('es-AR', {
       day: '2-digit',
       month: '2-digit'
     })
@@ -325,6 +328,11 @@ export default function ResumenScreen() {
                     <Text style={styles.pagoParticipante}>
                       {pago.participante}
                     </Text>
+                    {pago.vencimiento && (
+                      <Text style={styles.pagoVencimiento}>
+                        Vencimiento: {formatearFecha(pago.vencimiento)}
+                      </Text>
+                    )}
                   </View>
                   <View style={styles.pagoMeta}>
                     <Text style={styles.pagoMonto}>
@@ -445,6 +453,11 @@ const styles = StyleSheet.create({
   pagoParticipante: {
     fontSize: 12,
     color: '#666',
+  },
+  pagoVencimiento: {
+    fontSize: 11,
+    color: '#FF9800',
+    fontStyle: 'italic',
   },
   pagoMeta: {
     alignItems: 'flex-end',

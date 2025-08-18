@@ -19,8 +19,8 @@ import {
   Divider,
 } from 'react-native-paper'
 import { useLocalSearchParams, router } from 'expo-router'
-import { supabase, Gasto, GastoDetalle } from '../../../lib/supabase'
-import { showAlert } from '../../../lib/alerts'
+import { supabase, Gasto, GastoDetalle, pagosService } from '../../../lib/supabase'
+import { showAlert, showSuccessToast } from '../../../lib/alerts'
 
 type MedioPago = 'efectivo' | 'transferencia'
 
@@ -65,23 +65,28 @@ export default function PagarTodoScreen() {
       if (gastoBaseError) throw gastoBaseError
       setGastoBase(gastoBaseData)
 
-      // Cargar todos los gastos de la cuota específica
-      const { data: gastosCuotaData, error: gastosCuotaError } = await supabase
-        .from('gastos')
+      // Para gastos personales, cargar los detalles directamente
+      const { data: detallesData, error: detallesError } = await supabase
+        .from('gastos_detalle')
         .select(`
           *,
-          detalles:gastos_detalle(
-            *,
-            usuario:usuarios(*),
-            pagos(*)
-          )
+          gasto:gastos(*),
+          usuario:usuarios(*),
+          pagos(*)
         `)
-        .eq('gasto_base_id', gastoIdParam)
+        .eq('gasto_id', gastoIdParam)
         .eq('numero_cuota', numeroCuotaParam)
         .eq('usuario_id', user.id)
 
-      if (gastosCuotaError) throw gastosCuotaError
-      setGastosCuota(gastosCuotaData || [])
+      if (detallesError) throw detallesError
+      
+      // Convertir detalles a formato de gastos para compatibilidad
+      const gastosConDetalles = detallesData ? [{
+        ...gastoBaseData,
+        detalles: detallesData
+      }] : []
+      
+      setGastosCuota(gastosConDetalles)
     } catch (error: any) {
       console.error('Error cargando detalle del gasto:', error)
       showAlert('Error', 'No se pudo cargar el detalle del gasto')
@@ -127,22 +132,18 @@ export default function PagarTodoScreen() {
 
     setGuardando(true)
     try {
-      // Registrar pagos para todos los detalles pendientes
+      // Registrar pagos para todos los detalles pendientes usando el servicio
       const pagosPromises = detallesPendientes.map(async (detalle) => {
         const montoRestante = getMontoRestante(detalle)
         
-        // Registrar el pago
-        const { error: pagoError } = await supabase
-          .from('pagos')
-          .insert({
-            gasto_detalle_id: detalle.id,
-            monto: montoRestante,
-            medio_pago: medioPago,
-            fecha_pago: new Date().toISOString().split('T')[0],
-            notas: descripcion || `Pago completo cuota ${numeroCuota}`
-          })
-
-        if (pagoError) throw pagoError
+        // Usar el servicio de pagos para que se ejecute la lógica de gastos recurrentes
+        await pagosService.crearPago({
+          gasto_detalle_id: detalle.id,
+          monto: montoRestante,
+          medio_pago: medioPago,
+          fecha_pago: new Date().toISOString().split('T')[0],
+          notas: descripcion || `Pago completo cuota ${numeroCuota}`
+        }, detalle.gasto?.usuario_id || '')
 
         // Marcar como pagado
         const { error: updateError } = await supabase

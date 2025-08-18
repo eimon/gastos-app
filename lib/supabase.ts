@@ -14,7 +14,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Enums
 export type TipoGasto = 'personal' | 'compartido'
-export type MedioPago = 'Efectivo' | 'Transferencia'
+export type MedioPago = 'efectivo' | 'transferencia' | 'descuento'
 export type TipoDescuento = 'uniforme' | 'prorrateo'
 
 
@@ -102,7 +102,7 @@ export interface Pago {
   gasto_detalle_id: string
   monto: number
   fecha_pago: string
-  medio_pago: 'Efectivo' | 'Transferencia' | 'descuento'
+  medio_pago: 'efectivo' | 'transferencia' | 'descuento'
   notas?: string
   created_at: string
   updated_at: string
@@ -259,7 +259,7 @@ export const gastosService = {
     console.log(`[DEBUG] Buscando gastos para mes: ${mes}, año: ${año}`);
     
     // Usar la función RPC para obtener gastos compartidos correctamente
-    const { data: gastosCompartidos, error: errorCompartidos } = await supabase
+    const { data: gastosCompartidosTodos, error: errorCompartidos } = await supabase
       .rpc('obtener_gastos_compartidos', { usuario_actual_id: userId })
     
     if (errorCompartidos) {
@@ -267,9 +267,29 @@ export const gastosService = {
       throw errorCompartidos;
     }
 
-    console.log(`[DEBUG] Gastos compartidos encontrados: ${gastosCompartidos?.length || 0}`);
+    console.log(`[DEBUG] Gastos compartidos encontrados (sin filtrar): ${gastosCompartidosTodos?.length || 0}`);
+    
+    // Filtrar gastos compartidos por mes y año si se especifica
+    let gastosCompartidos = gastosCompartidosTodos || [];
+    if (mes !== undefined && año !== undefined) {
+      gastosCompartidos = gastosCompartidosTodos?.filter((gasto: any) => {
+        if (!gasto.mi_vencimiento) {
+          console.log(`[DEBUG] Gasto compartido sin vencimiento excluido:`, gasto.gasto_id);
+          return false;
+        }
+        // Usar componentes de fecha para evitar problemas de zona horaria
+        const [añoStr, mesStr, diaStr] = gasto.mi_vencimiento.split('-');
+        const añoVencimiento = parseInt(añoStr);
+        const mesVencimiento = parseInt(mesStr);
+        const incluir = mesVencimiento === mes && añoVencimiento === año;
+        console.log(`[DEBUG] Filtro RPC compartidos - Gasto ${gasto.gasto_id}: vencimiento=${gasto.mi_vencimiento}, mes=${mesVencimiento}, año=${añoVencimiento}, incluir=${incluir}`);
+        return incluir;
+      }) || [];
+    }
+
+    console.log(`[DEBUG] Gastos compartidos después del filtro: ${gastosCompartidos?.length || 0}`);
     if (gastosCompartidos && gastosCompartidos.length > 0) {
-      console.log('[DEBUG] Detalles de gastos compartidos:');
+      console.log('[DEBUG] Detalles de gastos compartidos filtrados:');
       gastosCompartidos.forEach((gasto: any, index: number) => {
         console.log(`[DEBUG] Gasto ${index + 1}:`, {
           gasto_id: gasto.gasto_id,
@@ -280,7 +300,7 @@ export const gastosService = {
         });
       });
     } else {
-      console.log('[DEBUG] No se encontraron gastos compartidos para este usuario');
+      console.log('[DEBUG] No se encontraron gastos compartidos para este usuario después del filtro');
     }
 
     // Consulta para gastos propios - obtener detalles directamente
@@ -300,7 +320,10 @@ export const gastosService = {
     // Filtrar por mes y año de vencimiento si se proporcionan
     if (mes !== undefined && año !== undefined) {
       const inicioMes = new Date(año, mes - 1, 1).toISOString().split('T')[0]
-      const finMes = new Date(año, mes, 0).toISOString().split('T')[0]
+      const finMes = new Date(año, mes, 0).toISOString().split('T')[0] // Último día del mes actual
+      
+      console.log(`[DEBUG] Filtros de fecha - Mes: ${mes}, Año: ${año}`);
+      console.log(`[DEBUG] inicioMes: ${inicioMes}, finMes: ${finMes}`);
       
       queryPropio = queryPropio
         .gte('vencimiento', inicioMes)
@@ -356,9 +379,17 @@ export const gastosService = {
     // Filtrar gastos compartidos por mes si se especifica
     const detallesCompartidosFiltrados = mes !== undefined && año !== undefined 
       ? detallesCompartidos.filter(detalle => {
-          if (!detalle.vencimiento) return false
-          const fechaVencimiento = new Date(detalle.vencimiento)
-          return fechaVencimiento.getMonth() === mes - 1 && fechaVencimiento.getFullYear() === año
+          if (!detalle.vencimiento) {
+            console.log(`[DEBUG] Detalle sin vencimiento excluido:`, detalle.id);
+            return false;
+          }
+          // Usar componentes de fecha para evitar problemas de zona horaria
+          const [añoStr, mesStr, diaStr] = detalle.vencimiento.split('-');
+          const añoVencimiento = parseInt(añoStr);
+          const mesVencimiento = parseInt(mesStr);
+          const incluir = mesVencimiento === mes && añoVencimiento === año;
+          console.log(`[DEBUG] Filtro compartidos - Detalle ${detalle.id}: vencimiento=${detalle.vencimiento}, mes=${mesVencimiento}, año=${añoVencimiento}, incluir=${incluir}`);
+          return incluir;
         })
       : detallesCompartidos
 
@@ -441,10 +472,12 @@ export const gastosService = {
       // Filtrar por mes si se especifica
         let incluirCuota = true
         if (mes !== undefined && año !== undefined && primerParticipante.vencimiento) {
-          const fechaVencimiento = new Date(primerParticipante.vencimiento)
-          const mesVencimiento = fechaVencimiento.getMonth() + 1 // getMonth() devuelve 0-11, necesitamos 1-12
-          const añoVencimiento = fechaVencimiento.getFullYear()
+          // Usar componentes de fecha para evitar problemas de zona horaria
+          const [añoStr, mesStr, diaStr] = primerParticipante.vencimiento.split('-');
+          const añoVencimiento = parseInt(añoStr);
+          const mesVencimiento = parseInt(mesStr);
           incluirCuota = mesVencimiento === mes && añoVencimiento === año
+          console.log(`[DEBUG] Filtro final cuota - ${claveGrupo}: vencimiento=${primerParticipante.vencimiento}, mes=${mesVencimiento}, año=${añoVencimiento}, incluir=${incluirCuota}`);
         }
       
       if (incluirCuota) {
@@ -516,7 +549,10 @@ export const gastosService = {
     // Filtrar por mes y año de vencimiento si se proporcionan
     if (mes !== undefined && año !== undefined) {
       const inicioMes = new Date(año, mes - 1, 1).toISOString().split('T')[0]
-      const finMes = new Date(año, mes, 0).toISOString().split('T')[0]
+      const finMes = new Date(año, mes, 0).toISOString().split('T')[0] // Último día del mes actual
+      
+      console.log(`[DEBUG] obtenerGastos - Filtros de fecha - Mes: ${mes}, Año: ${año}`);
+      console.log(`[DEBUG] obtenerGastos - inicioMes: ${inicioMes}, finMes: ${finMes}`);
       
       queryPropio = queryPropio
         .gte('vencimiento', inicioMes)
@@ -726,7 +762,7 @@ export const gastosService = {
         .map(detalle => ({
           gasto_detalle_id: detalle.id,
           monto: detalle.monto,
-          medio_pago: 'Efectivo' as MedioPago,
+          medio_pago: 'efectivo' as MedioPago,
           fecha_pago: new Date().toISOString().split('T')[0]
         }))
       
@@ -894,6 +930,101 @@ export const gastosService = {
       .eq('id', gastoId)
     
     if (error) throw error
+  },
+
+  // Actualizar monto de detalle y recalcular
+  async actualizarMontoDetalle(detalleId: string, nuevoMonto: number, userId: string) {
+    // Verificar que el detalle pertenece a un gasto del usuario
+    const { data: detalle, error: detalleError } = await supabase
+      .from('gastos_detalle')
+      .select(`
+        id,
+        gasto_id,
+        monto,
+        numero_cuota,
+        gasto:gastos!inner(
+          id,
+          usuario_id,
+          monto,
+          cuotas,
+          descuento,
+          tipo_descuento
+        )
+      `)
+      .eq('id', detalleId)
+      .eq('gasto.usuario_id', userId)
+      .single()
+    
+    if (detalleError || !detalle) {
+      throw new Error('Detalle no encontrado o sin permisos')
+    }
+
+    // Verificar que no tenga pagos asociados
+    const { data: pagos, error: pagosError } = await supabase
+      .from('pagos')
+      .select('id')
+      .eq('gasto_detalle_id', detalleId)
+      .limit(1)
+    
+    if (pagosError) {
+      throw new Error('Error al verificar pagos asociados')
+    }
+    
+    if (pagos && pagos.length > 0) {
+      throw new Error('No se puede editar el monto porque tiene pagos asociados')
+    }
+
+    // Actualizar el monto del detalle
+    const { error: updateError } = await supabase
+      .from('gastos_detalle')
+      .update({ monto: nuevoMonto })
+      .eq('id', detalleId)
+    
+    if (updateError) throw updateError
+
+    // Recalcular todos los detalles del gasto
+    await this.recalcularDetallesGasto(detalle.gasto_id, userId)
+  },
+
+  // Recalcular todos los detalles de un gasto
+  async recalcularDetallesGasto(gastoId: string, userId: string) {
+    // Obtener el gasto y todos sus detalles
+    const { data: gasto, error: gastoError } = await supabase
+      .from('gastos')
+      .select(`
+        id,
+        monto,
+        cuotas,
+        descuento,
+        tipo_descuento,
+        detalles:gastos_detalle(
+          id,
+          monto,
+          numero_cuota
+        )
+      `)
+      .eq('id', gastoId)
+      .eq('usuario_id', userId)
+      .single()
+    
+    if (gastoError || !gasto) {
+      throw new Error('Gasto no encontrado')
+    }
+
+    // Calcular el nuevo monto total basado en los detalles actuales
+    const montoTotalDetalles = gasto.detalles?.reduce((sum, detalle) => sum + detalle.monto, 0) || 0
+    
+    // Actualizar el monto del gasto si es diferente
+    if (montoTotalDetalles !== gasto.monto) {
+      const { error: updateGastoError } = await supabase
+        .from('gastos')
+        .update({ monto: montoTotalDetalles })
+        .eq('id', gastoId)
+      
+      if (updateGastoError) throw updateGastoError
+    }
+
+    return { montoAnterior: gasto.monto, montoNuevo: montoTotalDetalles }
   }
 }
 // Servicios de participantes (ya no se usan con el esquema simplificado)
@@ -902,26 +1033,64 @@ export const gastosService = {
 
 export const pagosService = {
   // Obtener pagos del usuario
-  async obtenerPagos(userId: string) {
-    const { data, error } = await supabase
-      .from('pagos')
-      .select(`
-        *,
-        gasto_detalle:gastos_detalle(
-          *,
-          usuario:usuarios(nickname, email),
-          gasto:gastos(
-            id,
-            descripcion,
-            usuario_id
-          )
-        )
-      `)
-      .eq('gasto_detalle.usuario_id', userId)
-      .order('created_at', { ascending: false })
-    
-    if (error) throw error
-    return data as Pago[]
+  async obtenerPagos(userId: string, mes?: number, año?: number) {
+    const { data, error } = await supabase.rpc('obtener_pagos_usuario', {
+      p_usuario_id: userId,
+      p_mes: mes || null,
+      p_año: año || null
+    });
+
+    if (error) {
+      console.error('Error al obtener pagos:', error);
+      throw error;
+    }
+
+    return data?.map((row: any) => ({
+      id: row.pago_id,
+      gasto_detalle_id: row.gasto_detalle_id,
+      monto: row.pago_monto,
+      fecha_pago: row.pago_fecha_pago,
+      medio_pago: row.pago_medio_pago,
+      notas: row.pago_notas,
+      created_at: row.pago_created_at,
+      updated_at: row.pago_updated_at,
+      gasto_detalle: {
+        id: row.gasto_detalle_id,
+        gasto_id: row.gasto_id,
+        usuario_id: row.usuario_id,
+        monto: row.gasto_detalle_monto,
+        pagado: row.gasto_detalle_pagado,
+        vencimiento: row.gasto_detalle_vencimiento,
+        numero_cuota: row.gasto_detalle_numero_cuota,
+        created_at: row.gasto_detalle_created_at,
+        updated_at: row.gasto_detalle_updated_at,
+        gasto: {
+          id: row.gasto_id,
+          usuario_id: row.gasto_usuario_id,
+          descripcion: row.gasto_descripcion,
+          monto: row.gasto_monto,
+          tipo: row.gasto_tipo,
+          fecha: row.gasto_fecha,
+          cuotas: row.gasto_cuotas,
+          created_at: row.gasto_created_at,
+          updated_at: row.gasto_updated_at,
+          usuario: {
+            id: row.gasto_usuario_id,
+            email: row.gasto_usuario_email,
+            nickname: row.gasto_usuario_nickname,
+            created_at: row.gasto_usuario_created_at,
+            updated_at: row.gasto_usuario_updated_at
+          }
+        },
+        usuario: {
+          id: row.usuario_id,
+          email: row.usuario_email,
+          nickname: row.usuario_nickname,
+          created_at: row.usuario_created_at,
+          updated_at: row.usuario_updated_at
+        }
+      }
+    })) || [];
   },
 
   // Crear pago
@@ -956,26 +1125,26 @@ export const pagosService = {
     
     if (error) throw error
 
-    // Verificar si el gasto es recurrente y si se completó el pago de toda la cuota
+    // Verificar si el gasto es recurrente y si se completó el pago de TODO el gasto
     if (detalle.gasto?.es_recurrente) {
-      // Verificar si todos los participantes de esta cuota están pagados
+      // Verificar si TODOS los detalles del gasto (todas las cuotas) están pagados
       const { data: todosLosDetalles, error: detallesError } = await supabase
         .from('gastos_detalle')
         .select('*, pagos(*)')
         .eq('gasto_id', detalle.gasto_id)
-        .eq('numero_cuota', detalle.numero_cuota)
       
       if (!detallesError && todosLosDetalles) {
-        // Verificar si todos los detalles están completamente pagados
+        // Verificar si todos los detalles de todas las cuotas están completamente pagados
         const todosCompletamentePagados = todosLosDetalles.every(d => {
           const totalPagado = d.pagos?.reduce((sum: number, p: any) => sum + p.monto, 0) || 0
           return totalPagado >= d.monto
         })
 
-        // Si todos están pagados y es la última cuota, generar el gasto recurrente
-        if (todosCompletamentePagados && detalle.numero_cuota === detalle.gasto.cuotas) {
+        // Solo generar el gasto recurrente si TODO el gasto (100%) está pagado
+        if (todosCompletamentePagados) {
           try {
-            await gastosService.generarGastoRecurrente(detalle.gasto_id, userId)
+            // Usar el usuario_id del gasto original (creador) para generar el recurrente
+            await gastosService.generarGastoRecurrente(detalle.gasto_id, detalle.gasto.usuario_id)
           } catch (recurrenteError) {
             console.error('Error generando gasto recurrente:', recurrenteError)
             // No lanzamos el error para no afectar el pago principal
