@@ -41,6 +41,10 @@ export default function GastoDetalleScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false)
   const [editingDetalle, setEditingDetalle] = useState<GastoDetalle | null>(null)
   const [nuevoMonto, setNuevoMonto] = useState('')
+  const [editGastoModalVisible, setEditGastoModalVisible] = useState(false)
+  const [nuevaDescripcion, setNuevaDescripcion] = useState('')
+  const [nuevoMontoGasto, setNuevoMontoGasto] = useState('')
+  const [tienePagosAsociados, setTienePagosAsociados] = useState(false)
 
 
   useEffect(() => {
@@ -366,6 +370,89 @@ export default function GastoDetalleScreen() {
     }
   }
 
+  // Función para verificar si el gasto tiene pagos asociados
+  const verificarPagosAsociados = async (gastoIdParam: string) => {
+    try {
+      // Primero obtenemos los IDs de los detalles del gasto
+      const { data: detalles, error: detallesError } = await supabase
+        .from('gastos_detalle')
+        .select('id')
+        .eq('gasto_id', gastoIdParam)
+      
+      if (detallesError) throw detallesError
+      if (!detalles || detalles.length === 0) return false
+      
+      const detalleIds = detalles.map(d => d.id)
+      
+      // Luego verificamos si hay pagos para esos detalles
+      const { data: pagos, error: pagosError } = await supabase
+        .from('pagos')
+        .select('id')
+        .in('gasto_detalle_id', detalleIds)
+        .limit(1)
+      
+      if (pagosError) throw pagosError
+      return pagos && pagos.length > 0
+    } catch (error) {
+      console.error('Error verificando pagos:', error)
+      return false
+    }
+  }
+
+  // Función para manejar la edición del gasto completo
+  const handleEditGasto = async () => {
+    if (!gastoBase) return
+    
+    const tienePagos = await verificarPagosAsociados(gastoBase.id)
+    setTienePagosAsociados(tienePagos)
+    setNuevaDescripcion(gastoBase.descripcion)
+    setNuevoMontoGasto(gastoBase.monto.toString())
+    setEditGastoModalVisible(true)
+  }
+
+  // Función para guardar los cambios del gasto
+  const handleGuardarGasto = async () => {
+    if (!gastoBase || (!nuevaDescripcion.trim() && !nuevoMontoGasto.trim())) {
+      showAlert('Error', 'Por favor completa al menos un campo')
+      return
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      let montoNumerico: number | undefined
+      
+      // Validar el monto si se proporciona
+      if (nuevoMontoGasto.trim() && nuevoMontoGasto !== gastoBase.monto.toString()) {
+        montoNumerico = parseFloat(nuevoMontoGasto)
+        if (isNaN(montoNumerico) || montoNumerico <= 0) {
+          showAlert('Error', 'Por favor ingresa un monto válido')
+          return
+        }
+      }
+
+      // Usar la función RPC para editar el gasto
+      await gastosService.editarGasto(
+        gastoBase.id,
+        user.id,
+        nuevaDescripcion.trim() !== gastoBase.descripcion ? nuevaDescripcion.trim() : undefined,
+        montoNumerico
+      )
+
+      showSuccessToast('Gasto actualizado correctamente')
+      setEditGastoModalVisible(false)
+      setNuevaDescripcion('')
+      setNuevoMontoGasto('')
+      
+      // Recargar los datos
+      cargarGastoDetalle(gastoId, numeroCuota)
+    } catch (error: any) {
+      console.error('Error actualizando gasto:', error)
+      showAlert('Error', error.message || 'No se pudo actualizar el gasto')
+    }
+  }
+
 
 
   if (loading) {
@@ -497,9 +584,18 @@ export default function GastoDetalleScreen() {
         <Card style={styles.headerCard}>
         <Card.Content>
           <View style={styles.gastoInfo}>
-            <Title style={styles.titulo}>
-              {gastoBase.descripcion}{gastoBase.cuotas > 1 ? ` - Cuota ${numeroCuota}` : ''}
-            </Title>
+            <View style={styles.tituloContainer}>
+              <Title style={styles.titulo}>
+                {gastoBase.descripcion}{gastoBase.cuotas > 1 ? ` - Cuota ${numeroCuota}` : ''}
+              </Title>
+              <IconButton
+                icon="pencil"
+                size={20}
+                iconColor="#666"
+                style={styles.editGastoIcon}
+                onPress={handleEditGasto}
+              />
+            </View>
             <Chip
               icon={getTipoIcon(gastoBase.tipo)}
               style={[styles.tipoChip, { backgroundColor: getTipoColor(gastoBase.tipo) }]}
@@ -801,6 +897,56 @@ export default function GastoDetalleScreen() {
             </Button>
           </View>
         </Modal>
+
+        {/* Modal de edición de gasto */}
+        <Modal
+          visible={editGastoModalVisible}
+          onDismiss={() => setEditGastoModalVisible(false)}
+          contentContainerStyle={{
+            backgroundColor: 'white',
+            padding: 20,
+            margin: 20,
+            borderRadius: 8,
+          }}
+        >
+          <Title>Editar Gasto</Title>
+          <TextInput
+            label="Descripción"
+            value={nuevaDescripcion}
+            onChangeText={setNuevaDescripcion}
+            mode="outlined"
+            style={{ marginBottom: 16 }}
+          />
+          {!tienePagosAsociados && (
+            <TextInput
+              label="Monto Total"
+              value={nuevoMontoGasto}
+              onChangeText={setNuevoMontoGasto}
+              keyboardType="numeric"
+              mode="outlined"
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          {tienePagosAsociados && (
+            <Paragraph style={{ marginBottom: 16, color: '#666' }}>
+              El monto no se puede modificar porque el gasto tiene pagos asociados.
+            </Paragraph>
+          )}
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+            <Button
+              mode="outlined"
+              onPress={() => setEditGastoModalVisible(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              mode="contained"
+              onPress={handleGuardarGasto}
+            >
+              Guardar
+            </Button>
+          </View>
+        </Modal>
       </Portal>
     </ScrollView>
     </View>
@@ -854,10 +1000,20 @@ const styles = StyleSheet.create({
   gastoInfo: {
     marginBottom: 16,
   },
+  tituloContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   titulo: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 8,
+    flex: 1,
+  },
+  editGastoIcon: {
+    margin: 0,
+    padding: 4,
   },
   tipoChip: {
     alignSelf: 'flex-start',

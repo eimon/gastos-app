@@ -54,7 +54,7 @@ export default function GastosScreen() {
   useFocusEffect(
     React.useCallback(() => {
       cargarGastos()
-    }, [])
+    }, [mesActual, añoActual])
   )
 
 

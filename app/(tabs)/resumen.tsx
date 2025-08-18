@@ -71,7 +71,7 @@ export default function ResumenScreen() {
   useFocusEffect(
     React.useCallback(() => {
       cargarDatos()
-    }, [])
+    }, [mesActual, añoActual])
   )
 
   const cargarDatos = async () => {

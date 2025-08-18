@@ -1045,6 +1045,26 @@ export const gastosService = {
     }
 
     return { montoAnterior: gasto.monto, montoNuevo: montoTotalDetalles }
+  },
+
+  // Editar gasto (descripción y/o monto) con validación de pagos
+  async editarGasto(gastoId: string, userId: string, nuevaDescripcion?: string, nuevoMonto?: number) {
+    const { data, error } = await supabase.rpc('editar_gasto', {
+      p_gasto_id: gastoId,
+      p_usuario_id: userId,
+      p_nueva_descripcion: nuevaDescripcion || null,
+      p_nuevo_monto: nuevoMonto || null
+    })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (!data.success) {
+      throw new Error(data.error)
+    }
+
+    return data
   }
 }
 // Servicios de participantes (ya no se usan con el esquema simplificado)
