@@ -753,7 +753,12 @@ export const gastosService = {
     // Si el gasto está marcado como pagado y es recurrente, generar automáticamente el siguiente gasto
     if (gasto.pagado && gasto.es_recurrente && resultado?.gasto_id) {
       try {
-        await this.generarGastoRecurrente(resultado.gasto_id, userId)
+        const gastoRecurrente = await this.generarGastoRecurrente(resultado.gasto_id, userId)
+        if (gastoRecurrente.ya_existia) {
+          console.log('El gasto recurrente para el próximo mes ya existía')
+        } else {
+          console.log('Gasto recurrente generado automáticamente:', gastoRecurrente.id)
+        }
       } catch (error) {
         console.warn('Error al generar gasto recurrente automáticamente:', error)
         // No lanzamos el error para no interrumpir la creación del gasto principal
@@ -799,83 +804,102 @@ export const gastosService = {
       throw new Error('El gasto no es recurrente')
     }
 
-    // Verificar si el gasto original estaba marcado como pagado
-    const gastoOriginalEstabaPagado = gastoOriginal.detalles?.every(d => d.pagado) || false
-
     // Calcular la fecha del próximo mes
     const fechaOriginal = new Date(gastoOriginal.fecha)
     const proximaFecha = new Date(fechaOriginal)
     proximaFecha.setMonth(proximaFecha.getMonth() + 1)
 
-    // Usar el nuevo monto si se proporciona, sino usar el monto original
-    const montoAUsar = nuevoMonto || gastoOriginal.monto
-
-    // Crear el nuevo gasto recurrente
-    const { data: nuevoGasto, error: nuevoGastoError } = await supabase
+    // Verificar si ya existe un gasto recurrente para el mes siguiente
+    const fechaProximaStr = proximaFecha.toISOString().split('T')[0]
+    const gastoRaizId = gastoOriginal.gasto_padre_id || gastoOriginalId
+    
+    const { data: gastosExistentes, error: existeError } = await supabase
       .from('gastos')
-      .insert({
-        usuario_id: userId,
+      .select('id, fecha')
+      .eq('usuario_id', userId)
+      .eq('descripcion', gastoOriginal.descripcion)
+      .eq('es_recurrente', true)
+      .or(`gasto_padre_id.eq.${gastoRaizId},id.eq.${gastoRaizId}`)
+      .eq('fecha', fechaProximaStr)
+      .limit(1)
+    
+    const gastoExistente = gastosExistentes && gastosExistentes.length > 0 ? gastosExistentes[0] : null
+    
+    if (existeError) {
+      console.error('Error verificando gasto existente:', existeError)
+      // No lanzamos error, continuamos con la creación
+    }
+    
+    // Si ya existe un gasto para esa fecha, no crear uno nuevo
+    if (gastoExistente) {
+      console.log(`Ya existe un gasto recurrente para la fecha ${fechaProximaStr}:`, gastoExistente.id)
+      return {
+        id: gastoExistente.id,
         descripcion: gastoOriginal.descripcion,
-        monto: montoAUsar,
+        monto: nuevoMonto || gastoOriginal.monto,
         tipo: gastoOriginal.tipo,
-        fecha: proximaFecha.toISOString().split('T')[0],
+        fecha: fechaProximaStr,
         cuotas: gastoOriginal.cuotas,
         descuento: gastoOriginal.descuento || 0,
         tipo_descuento: gastoOriginal.tipo_descuento || 'uniforme',
         es_recurrente: true,
-        gasto_padre_id: gastoOriginal.gasto_padre_id || gastoOriginalId
-      })
-      .select()
-      .single()
-    
-    if (nuevoGastoError) throw nuevoGastoError
-
-    // Crear detalles para el nuevo gasto basados en el original
-    const detalles: GastoDetalleCreate[] = []
-    const cantidadParticipantes = gastoOriginal.detalles?.filter(d => d.numero_cuota === 1).length || 1
-    
-    // Calcular montos de cuotas con descuento aplicado
-    const montosCalculados = calcularMontosConDescuento(
-      montoAUsar,
-      gastoOriginal.cuotas,
-      gastoOriginal.descuento || 0,
-      gastoOriginal.tipo_descuento || 'uniforme'
-    )
-
-    // Crear detalles para cada cuota y participante
-    for (let cuota = 1; cuota <= gastoOriginal.cuotas; cuota++) {
-      const fechaVencimiento = new Date(proximaFecha)
-      fechaVencimiento.setMonth(fechaVencimiento.getMonth() + (cuota - 1))
-      
-      // Obtener participantes únicos de la cuota 1 del gasto original
-      const participantesOriginales = gastoOriginal.detalles?.filter(d => d.numero_cuota === 1) || []
-      
-      for (const participanteOriginal of participantesOriginales) {
-        const montoPorParticipante = Math.round((montosCalculados[cuota - 1] / cantidadParticipantes) * 100) / 100
-        
-        detalles.push({
-          gasto_id: nuevoGasto.id,
-          usuario_id: participanteOriginal.usuario_id,
-          nombre_participante: participanteOriginal.nombre_participante,
-          monto: montoPorParticipante,
-          pagado: false, // El nuevo gasto siempre debe empezar sin pagar
-          vencimiento: fechaVencimiento.toISOString().split('T')[0],
-          numero_cuota: cuota
-        })
+        gasto_padre_id: gastoRaizId,
+        ya_existia: true // Indicador de que el gasto ya existía
       }
     }
 
-    const { data: detallesCreados, error: detallesError } = await supabase
-      .from('gastos_detalle')
-      .insert(detalles)
-      .select()
+    // Usar el nuevo monto si se proporciona, sino usar el monto original
+    const montoAUsar = nuevoMonto || gastoOriginal.monto
+
+    // Obtener participantes únicos de la cuota 1 del gasto original
+    const participantesOriginales = gastoOriginal.detalles?.filter(d => d.numero_cuota === 1) || []
     
-    if (detallesError) throw detallesError
+    // Preparar participantes en formato JSONB para la función RPC
+    const participantesJsonb = participantesOriginales.map(p => ({
+      usuario_id: p.usuario_id || null,
+      nickname: p.usuario_id ? null : p.nombre_participante
+    }))
+    
+    // Usar la función RPC que maneja correctamente la distribución de centavos
+    const { data: resultado, error } = await supabase
+      .rpc('crear_gasto_completo', {
+        p_descripcion: gastoOriginal.descripcion,
+        p_monto_total: montoAUsar,
+        p_tipo: gastoOriginal.tipo,
+        p_fecha: proximaFecha.toISOString().split('T')[0],
+        p_cuotas: gastoOriginal.cuotas,
+        p_participantes: participantesJsonb,
+        p_primer_vencimiento: proximaFecha.toISOString().split('T')[0],
+        p_descuento: gastoOriginal.descuento || 0,
+        p_tipo_descuento: gastoOriginal.tipo_descuento || 'uniforme',
+        p_pagado: false, // El nuevo gasto siempre debe empezar sin pagar
+        p_es_recurrente: true,
+        p_gasto_padre_id: gastoOriginal.gasto_padre_id || gastoOriginalId
+      })
+    
+    if (error) {
+      console.error('Error en función RPC crear_gasto_completo:', error)
+      throw error
+    }
+    
+    // Verificar si la función RPC retornó un error
+    if (resultado && !resultado.success) {
+      throw new Error(resultado.error || 'Error desconocido al crear el gasto recurrente')
+    }
 
-    // No crear pagos automáticos para el nuevo gasto recurrente
-    // Los pagos deben permanecer asociados únicamente al gasto original
-
-    return nuevoGasto
+    return {
+      id: resultado?.gasto_id,
+      descripcion: gastoOriginal.descripcion,
+      monto: montoAUsar,
+      tipo: gastoOriginal.tipo,
+      fecha: proximaFecha.toISOString().split('T')[0],
+      cuotas: gastoOriginal.cuotas,
+      descuento: gastoOriginal.descuento || 0,
+      tipo_descuento: gastoOriginal.tipo_descuento || 'uniforme',
+      es_recurrente: true,
+      gasto_padre_id: gastoOriginal.gasto_padre_id || gastoOriginalId,
+      ya_existia: false // Indicador de que se creó un nuevo gasto
+    }
   },
 
   // Eliminar gasto
@@ -1178,7 +1202,12 @@ export const pagosService = {
         if (todosCompletamentePagados) {
           try {
             // Usar el usuario_id del gasto original (creador) para generar el recurrente
-            await gastosService.generarGastoRecurrente(detalle.gasto_id, detalle.gasto.usuario_id)
+            const gastoRecurrente = await gastosService.generarGastoRecurrente(detalle.gasto_id, detalle.gasto.usuario_id)
+            if (gastoRecurrente.ya_existia) {
+              console.log('El gasto recurrente para el próximo mes ya existía, no se creó uno nuevo')
+            } else {
+              console.log('Gasto recurrente generado tras completar pago:', gastoRecurrente.id)
+            }
           } catch (recurrenteError) {
             console.error('Error generando gasto recurrente:', recurrenteError)
             // No lanzamos el error para no afectar el pago principal

@@ -38,6 +38,9 @@ export default function GastosScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [gastoAEliminar, setGastoAEliminar] = useState<GastoCuotaUnificada | null>(null)
   const [eliminando, setEliminando] = useState(false)
+  const [showPaymentRequestModal, setShowPaymentRequestModal] = useState(false)
+  const [gastoParaSolicitud, setGastoParaSolicitud] = useState<GastoCuotaUnificada | null>(null)
+  const [enviandoSolicitud, setEnviandoSolicitud] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const { mesActual, añoActual, navegarMesAnterior, navegarMesSiguiente } = useMonth()
 
@@ -114,7 +117,18 @@ export default function GastosScreen() {
     setGastoAEliminar(null)
   }
 
+  const confirmarSolicitudPago = (gasto: GastoCuotaUnificada) => {
+    setGastoParaSolicitud(gasto)
+    setShowPaymentRequestModal(true)
+  }
+
+  const cancelarSolicitudPago = () => {
+    setShowPaymentRequestModal(false)
+    setGastoParaSolicitud(null)
+  }
+
   const crearSolicitudPago = async (gasto: GastoCuotaUnificada) => {
+    setEnviandoSolicitud(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || !user.id) {
@@ -165,10 +179,14 @@ export default function GastosScreen() {
       }
 
       await solicitudesPagoService.crearSolicitudPago(solicitudData, user.id)
+      setShowPaymentRequestModal(false)
+      setGastoParaSolicitud(null)
       showAlert('Éxito', 'Solicitud de pago enviada correctamente')
       await cargarGastos() // Recargar para actualizar el estado
     } catch (error: any) {
       showAlert('Error', error.message || 'No se pudo crear la solicitud de pago')
+    } finally {
+      setEnviandoSolicitud(false)
     }
   }
 
@@ -365,7 +383,7 @@ export default function GastosScreen() {
               iconColor="#4CAF50"
               onPress={(e) => {
                 e.stopPropagation()
-                crearSolicitudPago(gasto)
+                confirmarSolicitudPago(gasto)
               }}
               style={styles.gastoRowDeleteButton}
             />
@@ -534,6 +552,57 @@ export default function GastosScreen() {
                 style={styles.deleteButton}
               >
                 Eliminar
+              </Button>
+            </Card.Actions>
+          </Card>
+        </Modal>
+      </Portal>
+
+      {/* Modal de confirmación para solicitud de pago */}
+      <Portal>
+        <Modal
+          visible={showPaymentRequestModal}
+          onDismiss={cancelarSolicitudPago}
+          contentContainerStyle={styles.modalContainer}
+        >
+          <Card>
+            <Card.Content>
+              <View style={styles.modalHeader}>
+                <Ionicons name="cash" size={48} color="#4CAF50" />
+                <Title style={styles.modalTitle}>Solicitar Pago</Title>
+              </View>
+              
+              <Paragraph style={styles.modalText}>
+                ¿Deseas enviar una solicitud de pago para "{gastoParaSolicitud?.descripcion}"?
+              </Paragraph>
+              
+              <Paragraph style={styles.modalText}>
+                Monto a solicitar: ${gastoParaSolicitud ? (gastoParaSolicitud.monto_usuario - gastoParaSolicitud.monto_pagado_usuario).toFixed(2) : '0.00'}
+              </Paragraph>
+              
+              <Paragraph style={styles.modalWarning}>
+                Se enviará una notificación al creador del gasto.
+              </Paragraph>
+            </Card.Content>
+            
+            <Card.Actions style={styles.modalActions}>
+              <Button
+                mode="outlined"
+                onPress={cancelarSolicitudPago}
+                disabled={enviandoSolicitud}
+                style={styles.cancelButton}
+              >
+                Cancelar
+              </Button>
+              <Button
+                mode="contained"
+                onPress={() => gastoParaSolicitud && crearSolicitudPago(gastoParaSolicitud)}
+                loading={enviandoSolicitud}
+                disabled={enviandoSolicitud}
+                buttonColor="#4CAF50"
+                style={styles.deleteButton}
+              >
+                Enviar Solicitud
               </Button>
             </Card.Actions>
           </Card>

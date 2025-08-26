@@ -51,10 +51,18 @@ export default function GastoDetalleScreen() {
   const [cambiarParticipanteModalVisible, setCambiarParticipanteModalVisible] = useState(false)
   const [participanteACambiar, setParticipanteACambiar] = useState<GastoDetalle | null>(null)
   const [tabSeleccionada, setTabSeleccionada] = useState('no-usuario')
-  const [nuevoParticipante, setNuevoParticipante] = useState({ nickname: '', email: '' })
+  const [nuevoParticipante, setNuevoParticipante] = useState({
+    nickname: '',
+    email: ''
+  })
   const [emailBusqueda, setEmailBusqueda] = useState('')
   const [usuarioEncontrado, setUsuarioEncontrado] = useState<any>(null)
   const [buscandoUsuario, setBuscandoUsuario] = useState(false)
+  
+  // Estados para favoritos
+  const [favoritos, setFavoritos] = useState<any[]>([])
+  const [cargandoFavoritos, setCargandoFavoritos] = useState(false)
+  const [favoritoSeleccionado, setFavoritoSeleccionado] = useState<any>(null)
 
 
   useEffect(() => {
@@ -347,6 +355,64 @@ export default function GastoDetalleScreen() {
   const handleCambiarParticipante = (detalle: GastoDetalle) => {
     setParticipanteACambiar(detalle)
     setCambiarParticipanteModalVisible(true)
+    // Cargar favoritos cuando se abre el modal
+    cargarFavoritos()
+  }
+
+  const cargarFavoritos = async () => {
+    setCargandoFavoritos(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: favoritosData, error } = await supabase
+        .rpc('obtener_favoritos_usuario')
+
+      if (error) {
+        console.error('Error cargando favoritos:', error)
+        return
+      }
+
+      // Filtrar favoritos que no sean el participante actual
+      const favoritosFiltrados = favoritosData?.filter((favorito: any) => {
+        // Para favoritos con usuario registrado
+        if (favorito.usuario_favorito_id) {
+          return favorito.usuario_favorito_id !== participanteACambiar?.usuario_id
+        }
+        // Para favoritos sin usuario registrado (solo nombre)
+        return favorito.nombre_favorito !== participanteACambiar?.nombre_participante
+      }) || []
+
+      setFavoritos(favoritosFiltrados)
+    } catch (error) {
+      console.error('Error cargando favoritos:', error)
+    } finally {
+      setCargandoFavoritos(false)
+    }
+  }
+
+  const cambiarAFavoritoSeleccionado = async () => {
+    if (!favoritoSeleccionado || !participanteACambiar) return
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      await gastosService.cambiarParticipanteGasto(
+        gastoBase!.id,
+        user.id,
+        participanteACambiar.id,
+        favoritoSeleccionado.usuario_favorito_id,
+        favoritoSeleccionado.usuario_favorito_id ? undefined : favoritoSeleccionado.nombre_favorito
+      )
+
+      showAlert('Éxito', 'Participante cambiado correctamente')
+      cerrarModalCambiarParticipante()
+      cargarGastoDetalle(gastoId, numeroCuota)
+    } catch (error: any) {
+      console.error('Error cambiando participante:', error)
+      showAlert('Error', error.message || 'No se pudo cambiar el participante')
+    }
   }
 
   // Función para buscar usuario por email
@@ -384,6 +450,9 @@ export default function GastoDetalleScreen() {
     setEmailBusqueda('')
     setUsuarioEncontrado(null)
     setBuscandoUsuario(false)
+    setFavoritos([])
+    setFavoritoSeleccionado(null)
+    setCargandoFavoritos(false)
   }
 
   // Función para cambiar participante sin usuario
@@ -1016,7 +1085,7 @@ export default function GastoDetalleScreen() {
             mode="outlined"
             style={{ marginBottom: 16 }}
           />
-          {!tienePagosAsociados && (
+          {!tienePagosAsociados && (gastoBase?.cuotas || 1) === 1 && (
             <TextInput
               label="Monto Total"
               value={nuevoMontoGasto}
@@ -1026,9 +1095,12 @@ export default function GastoDetalleScreen() {
               style={{ marginBottom: 16 }}
             />
           )}
-          {tienePagosAsociados && (
+          {(tienePagosAsociados || (gastoBase?.cuotas || 1) > 1) && (
             <Paragraph style={{ marginBottom: 16, color: '#666' }}>
-              El monto no se puede modificar porque el gasto tiene pagos asociados.
+              {tienePagosAsociados 
+                ? 'El monto no se puede modificar porque el gasto tiene pagos asociados.'
+                : 'El monto no se puede modificar porque el gasto está dividido en cuotas.'
+              }
             </Paragraph>
           )}
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
@@ -1067,7 +1139,12 @@ export default function GastoDetalleScreen() {
           {/* Pestañas */}
           <SegmentedButtons
             value={tabSeleccionada}
-            onValueChange={setTabSeleccionada}
+            onValueChange={(value) => {
+              setTabSeleccionada(value)
+              if (value === 'favoritos' && favoritos.length === 0 && !cargandoFavoritos) {
+                cargarFavoritos()
+              }
+            }}
             buttons={[
               { 
                 value: 'no-usuario', 
@@ -1077,6 +1154,11 @@ export default function GastoDetalleScreen() {
               { 
                 value: 'buscar-usuario', 
                 label: 'Buscar Usuario',
+                style: { flex: 1 }
+              },
+              { 
+                value: 'favoritos', 
+                label: 'Favoritos',
                 style: { flex: 1 }
               }
             ]}
@@ -1141,6 +1223,48 @@ export default function GastoDetalleScreen() {
               )}
             </View>
           )}
+
+          {/* Contenido de la pestaña "Favoritos" */}
+          {tabSeleccionada === 'favoritos' && (
+            <View style={{ marginTop: 8 }}>
+              <Paragraph style={{ fontSize: 14, color: '#666', marginBottom: 16 }}>
+                Seleccionar de tus usuarios favoritos
+              </Paragraph>
+              
+              {cargandoFavoritos ? (
+                <Text style={{ fontSize: 14, color: '#666', textAlign: 'center', marginTop: 20 }}>Cargando favoritos...</Text>
+              ) : favoritos.length === 0 ? (
+                <Text style={{ fontSize: 14, color: '#666', textAlign: 'center', marginTop: 20, lineHeight: 20 }}>
+                  No tienes usuarios favoritos disponibles.
+                </Text>
+              ) : (
+                <View style={{ marginTop: 8 }}>
+                  {favoritos.map((favorito) => (
+                    <Card 
+                      key={favorito.id} 
+                      style={[
+                        { marginBottom: 8, backgroundColor: '#f8f9fa' },
+                        favoritoSeleccionado?.id === favorito.id && { backgroundColor: '#e3f2fd', borderColor: '#2196F3', borderWidth: 2 }
+                      ]}
+                      onPress={() => setFavoritoSeleccionado(favorito)}
+                    >
+                      <Card.Content>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#333' }}>
+                          {favorito.nickname || favorito.nombre_favorito}
+                        </Text>
+                        <Text style={{ fontSize: 14, color: '#666', marginTop: 2 }}>
+                          {favorito.email_favorito}
+                        </Text>
+                        {/* <Text style={{ fontSize: 12, color: '#2196F3', marginTop: 4, fontStyle: 'italic' }}>
+                          Usado {favorito.frecuencia_uso} {favorito.frecuencia_uso === 1 ? 'vez' : 'veces'}
+                        </Text> */}
+                      </Card.Content>
+                    </Card>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
           
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <Button
@@ -1158,13 +1282,21 @@ export default function GastoDetalleScreen() {
               >
                 Cambiar
               </Button>
-            ) : (
+            ) : tabSeleccionada === 'buscar-usuario' ? (
               <Button
                 mode="contained"
                 onPress={cambiarAUsuarioEncontrado}
                 disabled={!usuarioEncontrado}
               >
                 Cambiar Usuario
+              </Button>
+            ) : (
+              <Button
+                mode="contained"
+                onPress={cambiarAFavoritoSeleccionado}
+                disabled={!favoritoSeleccionado}
+              >
+                Cambiar a Favorito
               </Button>
             )}
           </View>

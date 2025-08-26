@@ -152,7 +152,7 @@ export default function SolicitudesPagoScreen() {
           )}
           
           <Text style={styles.solicitudFecha}>
-            {formatearFecha(solicitud.fecha_solicitud)}
+            {formatearFecha(solicitud.vencimiento)}
           </Text>
           
           {esRecibida && solicitud.estado === 'pendiente' && (
@@ -243,7 +243,7 @@ export default function SolicitudesPagoScreen() {
         {vistaActual === 'recibidas' ? (
           solicitudesRecibidas.length > 0 ? (
             solicitudesRecibidas.map(solicitud => (
-              <View key={`recibida-${solicitud.id}`}>
+              <View key={`recibida-${solicitud.solicitud_id}`}>
                 {renderSolicitud(solicitud, true)}
               </View>
             ))
@@ -256,7 +256,7 @@ export default function SolicitudesPagoScreen() {
         ) : (
           solicitudesEnviadas.length > 0 ? (
             solicitudesEnviadas.map(solicitud => (
-              <View key={`enviada-${solicitud.id}`}>
+              <View key={`enviada-${solicitud.solicitud_id}`}>
                 {renderSolicitud(solicitud, false)}
               </View>
             ))

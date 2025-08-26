@@ -1191,35 +1191,47 @@ BEGIN
         
         -- Si es un participante sin cuenta (solo nombre)
         ELSIF participante_record.nombre_participante IS NOT NULL THEN
-            -- Verificar si ya existe en favoritos
-            IF EXISTS (
-                SELECT 1 FROM public.favoritos
-                WHERE usuario_id = creador_gasto_id
-                AND nombre_favorito = participante_record.nombre_participante
-                AND usuario_favorito_id IS NULL
-            ) THEN
-                -- Actualizar frecuencia y último uso
-                UPDATE public.favoritos
-                SET frecuencia_uso = frecuencia_uso + 1,
-                    ultimo_uso = NOW(),
-                    updated_at = NOW()
-                WHERE usuario_id = creador_gasto_id
-                AND nombre_favorito = participante_record.nombre_participante
-                AND usuario_favorito_id IS NULL;
-            ELSE
-                -- Insertar nuevo favorito
-                INSERT INTO public.favoritos (
-                    usuario_id,
-                    nombre_favorito,
-                    frecuencia_uso,
-                    ultimo_uso
-                ) VALUES (
-                    creador_gasto_id,
-                    participante_record.nombre_participante,
-                    1,
-                    NOW()
-                );
-            END IF;
+            -- Para participantes no usuarios, generar un email temporal basado en el nombre
+            -- para cumplir con la restricción favoritos_identificador_check
+            DECLARE
+                email_temporal TEXT;
+            BEGIN
+                email_temporal := LOWER(REPLACE(participante_record.nombre_participante, ' ', '')) || '@temp.com';
+                
+                -- Verificar si ya existe en favoritos
+                IF EXISTS (
+                    SELECT 1 FROM public.favoritos
+                    WHERE usuario_id = creador_gasto_id
+                    AND nombre_favorito = participante_record.nombre_participante
+                    AND email_favorito = email_temporal
+                    AND usuario_favorito_id IS NULL
+                ) THEN
+                    -- Actualizar frecuencia y último uso
+                    UPDATE public.favoritos
+                    SET frecuencia_uso = frecuencia_uso + 1,
+                        ultimo_uso = NOW(),
+                        updated_at = NOW()
+                    WHERE usuario_id = creador_gasto_id
+                    AND nombre_favorito = participante_record.nombre_participante
+                    AND email_favorito = email_temporal
+                    AND usuario_favorito_id IS NULL;
+                ELSE
+                    -- Insertar nuevo favorito
+                    INSERT INTO public.favoritos (
+                        usuario_id,
+                        nombre_favorito,
+                        email_favorito,
+                        frecuencia_uso,
+                        ultimo_uso
+                    ) VALUES (
+                        creador_gasto_id,
+                        participante_record.nombre_participante,
+                        email_temporal,
+                        1,
+                        NOW()
+                    );
+                END IF;
+            END;
         END IF;
     END LOOP;
     
@@ -1379,22 +1391,34 @@ BEGIN
     v_participantes_count := jsonb_array_length(p_participantes);
     
     -- Calcular montos con descuento aplicado
-    FOR v_cuota IN 1..p_cuotas LOOP
-        v_monto_por_cuota := p_monto_total / p_cuotas;
-        
-        -- Aplicar descuento según tipo
-        IF p_descuento > 0 THEN
-            IF p_tipo_descuento = 'uniforme' THEN
-                -- Descuento uniforme: se aplica a todas las cuotas por igual
-                v_monto_por_cuota := v_monto_por_cuota - (p_descuento / p_cuotas);
-            ELSIF p_tipo_descuento = 'prorrateo' AND v_cuota = 1 THEN
-                -- Descuento por prorrateo: se aplica solo a la primera cuota
-                v_monto_por_cuota := v_monto_por_cuota - p_descuento;
+    DECLARE
+        v_descuento_restante DECIMAL(10,2) := p_descuento;
+    BEGIN
+        FOR v_cuota IN 1..p_cuotas LOOP
+            v_monto_por_cuota := p_monto_total / p_cuotas;
+            
+            -- Aplicar descuento según tipo
+            IF p_descuento > 0 THEN
+                IF p_tipo_descuento = 'uniforme' THEN
+                    -- Descuento uniforme: se aplica a todas las cuotas por igual
+                    v_monto_por_cuota := v_monto_por_cuota - (p_descuento / p_cuotas);
+                ELSIF p_tipo_descuento = 'prorrateo' AND v_descuento_restante > 0 THEN
+                    -- Descuento por prorrateo: se aplica progresivamente hasta agotarse
+                    IF v_descuento_restante >= v_monto_por_cuota THEN
+                        -- El descuento restante cubre toda la cuota
+                        v_descuento_restante := v_descuento_restante - v_monto_por_cuota;
+                        v_monto_por_cuota := 0;
+                    ELSE
+                        -- El descuento restante cubre solo parte de la cuota
+                        v_monto_por_cuota := v_monto_por_cuota - v_descuento_restante;
+                        v_descuento_restante := 0;
+                    END IF;
+                END IF;
             END IF;
-        END IF;
-        
-        v_montos_calculados[v_cuota] := v_monto_por_cuota;
-    END LOOP;
+            
+            v_montos_calculados[v_cuota] := v_monto_por_cuota;
+        END LOOP;
+    END;
     
     -- Crear el gasto principal
     INSERT INTO public.gastos (
@@ -1486,7 +1510,7 @@ BEGIN
     END LOOP;
     
     -- Agregar favoritos automáticamente
-    PERFORM agregar_favoritos_gasto(v_gasto_id);
+    PERFORM public.agregar_favoritos_gasto(v_gasto_id);
     
     -- Retornar resultado exitoso
     v_resultado := json_build_object(
@@ -1873,7 +1897,7 @@ BEGIN
         g.tipo as tipo_gasto,
         g.es_recurrente,
         gd.usuario_id as usuario_deudor_id,
-        COALESCE(u.nickname, 'Usuario externo') as usuario_deudor_nickname,
+        COALESCE(u.nickname, gd.nombre_participante) as usuario_deudor_nickname,
         COALESCE(u.email, 'Sin email') as usuario_deudor_email
     FROM gastos_detalle gd
     INNER JOIN gastos g ON gd.gasto_id = g.id

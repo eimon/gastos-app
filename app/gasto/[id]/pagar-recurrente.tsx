@@ -173,8 +173,12 @@ export default function PagarRecurrenteScreen() {
       // Si se modificó el monto y es la última cuota, generar el gasto recurrente con el nuevo monto
       if (gastoBase?.es_recurrente && numeroCuota === gastoBase.cuotas && modificarMonto) {
         try {
-          await gastosService.generarGastoRecurrente(gastoId, gastoBase.usuario_id, montoFinal)
-          showAlert('Éxito', `Gasto recurrente generado para el próximo mes con monto ${formatearMonto(montoFinal)}`)
+          const gastoRecurrente = await gastosService.generarGastoRecurrente(gastoId, gastoBase.usuario_id, montoFinal)
+          if (gastoRecurrente.ya_existia) {
+            showAlert('Información', `El gasto recurrente para el próximo mes ya existía. Los pagos se registraron correctamente.`)
+          } else {
+            showAlert('Éxito', `Gasto recurrente generado para el próximo mes con monto ${formatearMonto(montoFinal)}`)
+          }
         } catch (recurrenteError) {
           console.error('Error generando gasto recurrente:', recurrenteError)
           showAlert('Advertencia', 'Los pagos se registraron correctamente, pero hubo un error generando el gasto recurrente')

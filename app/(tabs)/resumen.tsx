@@ -64,6 +64,8 @@ export default function ResumenScreen() {
   const [gastosPorPagar, setGastosPorPagar] = useState<GastoPorPagar[]>([])
   const [gastosAdeudados, setGastosAdeudados] = useState<GastoAdeudado[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [mostrarGastosPorPagar, setMostrarGastosPorPagar] = useState(false)
+  const [mostrarGastosAdeudados, setMostrarGastosAdeudados] = useState(false)
   const { mesActual, añoActual, navegarMesAnterior, navegarMesSiguiente, irMesActual } = useMonth()
 
   useEffect(() => {
@@ -261,99 +263,121 @@ export default function ResumenScreen() {
           <Card.Content>
             <Title style={styles.cardTitle}>Resumen del Mes</Title>
             <View style={styles.estadisticasGrid}>
-              <View style={styles.estadisticaItem}>
+              <TouchableOpacity 
+                style={styles.estadisticaItem}
+                onPress={() => setMostrarGastosPorPagar(!mostrarGastosPorPagar)}
+              >
                 <Text style={styles.estadisticaNumero}>
                   {formatearMonto(estadisticas.gastosPorPagar)}
                 </Text>
                 <Text style={styles.estadisticaLabel}>Por Pagar</Text>
-              </View>
-              <View style={styles.estadisticaItem}>
+                <Ionicons 
+                  name={mostrarGastosPorPagar ? "chevron-up" : "chevron-down"} 
+                  size={16} 
+                  color="#666" 
+                  style={{ marginTop: 4 }}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.estadisticaItem}
+                onPress={() => setMostrarGastosAdeudados(!mostrarGastosAdeudados)}
+              >
                 <Text style={styles.estadisticaNumero}>
                   {formatearMonto(estadisticas.gastosAdeudados)}
                 </Text>
                 <Text style={styles.estadisticaLabel}>Me Adeudan</Text>
-              </View>
+                <Ionicons 
+                  name={mostrarGastosAdeudados ? "chevron-up" : "chevron-down"} 
+                  size={16} 
+                  color="#666" 
+                  style={{ marginTop: 4 }}
+                />
+              </TouchableOpacity>
             </View>
           </Card.Content>
         </Card>
 
         {/* Gastos por pagar */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Title style={styles.cardTitle}>Gastos por Pagar ({gastosPorPagar.length})</Title>
-            {gastosPorPagar.length > 0 ? (
-              gastosPorPagar.map((gasto) => (
-                <View key={gasto.gasto_detalle_id} style={styles.pagoItem}>
-                  <View style={styles.pagoInfo}>
-                    <Text style={styles.pagoDescripcion} numberOfLines={1}>
-                      {gasto.descripcion}
-                    </Text>
-                    <Text style={styles.pagoParticipante}>
-                      Creado por: {gasto.usuario_creador_nickname}
-                    </Text>
-                    <Text style={styles.pagoVencimiento}>
-                      Vencimiento: {formatearFecha(gasto.vencimiento)} • Cuota {gasto.numero_cuota}
-                    </Text>
-                    {gasto.es_recurrente && (
-                      <Text style={[styles.pagoVencimiento, { color: '#9C27B0' }]}>
-                        Recurrente
+        {mostrarGastosPorPagar && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Title style={styles.cardTitle}>Gastos por Pagar ({gastosPorPagar.length})</Title>
+              {gastosPorPagar.length > 0 ? (
+                gastosPorPagar.map((gasto) => (
+                  <View key={gasto.gasto_detalle_id} style={styles.pagoItem}>
+                    <View style={styles.pagoInfo}>
+                      <Text style={styles.pagoDescripcion} numberOfLines={1}>
+                        {gasto.descripcion}
                       </Text>
-                    )}
+                      <Text style={styles.pagoParticipante}>
+                        Creado por: {gasto.usuario_creador_nickname}
+                      </Text>
+                      <Text style={styles.pagoVencimiento}>
+                        Vencimiento: {formatearFecha(gasto.vencimiento)} • Cuota {gasto.numero_cuota}
+                      </Text>
+                      {gasto.es_recurrente && (
+                        <Text style={[styles.pagoVencimiento, { color: '#9C27B0' }]}>
+                          Recurrente
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.pagoMeta}>
+                      <Text style={[styles.pagoMonto, { color: '#FF5722' }]}>
+                        {formatearMonto(gasto.monto_pendiente)}
+                      </Text>
+                      <Text style={styles.pagoFecha}>
+                        de {formatearMonto(gasto.monto)}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.pagoMeta}>
-                    <Text style={[styles.pagoMonto, { color: '#FF5722' }]}>
-                      {formatearMonto(gasto.monto_pendiente)}
-                    </Text>
-                    <Text style={styles.pagoFecha}>
-                      de {formatearMonto(gasto.monto)}
-                    </Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>No hay gastos pendientes de pago</Text>
-            )}
-          </Card.Content>
-        </Card>
+                ))
+              ) : (
+                <Text style={styles.emptyText}>No hay gastos pendientes de pago</Text>
+              )}
+            </Card.Content>
+          </Card>
+        )}
 
         {/* Gastos adeudados */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Title style={styles.cardTitle}>Me Adeudan ({gastosAdeudados.length})</Title>
-            {gastosAdeudados.length > 0 ? (
-              gastosAdeudados.map((gasto) => (
-                <View key={gasto.gasto_detalle_id} style={styles.pagoItem}>
-                  <View style={styles.pagoInfo}>
-                    <Text style={styles.pagoDescripcion} numberOfLines={1}>
-                      {gasto.descripcion}
-                    </Text>
-                    <Text style={styles.pagoParticipante}>
-                      Debe: {gasto.usuario_deudor_nickname}
-                    </Text>
-                    <Text style={styles.pagoVencimiento}>
-                      Vencimiento: {formatearFecha(gasto.vencimiento)} • Cuota {gasto.numero_cuota}
-                    </Text>
-                    {gasto.es_recurrente && (
-                      <Text style={[styles.pagoVencimiento, { color: '#9C27B0' }]}>
-                        Recurrente
+        {mostrarGastosAdeudados && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Title style={styles.cardTitle}>Me Adeudan ({gastosAdeudados.length})</Title>
+              {gastosAdeudados.length > 0 ? (
+                gastosAdeudados.map((gasto) => (
+                  <View key={gasto.gasto_detalle_id} style={styles.pagoItem}>
+                    <View style={styles.pagoInfo}>
+                      <Text style={styles.pagoDescripcion} numberOfLines={1}>
+                        {gasto.descripcion}
                       </Text>
-                    )}
+                      <Text style={styles.pagoParticipante}>
+                        Debe: {gasto.usuario_deudor_nickname}
+                      </Text>
+                      <Text style={styles.pagoVencimiento}>
+                        Vencimiento: {formatearFecha(gasto.vencimiento)} • Cuota {gasto.numero_cuota}
+                      </Text>
+                      {gasto.es_recurrente && (
+                        <Text style={[styles.pagoVencimiento, { color: '#9C27B0' }]}>
+                          Recurrente
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.pagoMeta}>
+                      <Text style={[styles.pagoMonto, { color: '#4CAF50' }]}>
+                        {formatearMonto(gasto.monto_pendiente)}
+                      </Text>
+                      <Text style={styles.pagoFecha}>
+                        de {formatearMonto(gasto.monto)}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.pagoMeta}>
-                    <Text style={[styles.pagoMonto, { color: '#4CAF50' }]}>
-                      {formatearMonto(gasto.monto_pendiente)}
-                    </Text>
-                    <Text style={styles.pagoFecha}>
-                      de {formatearMonto(gasto.monto)}
-                    </Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>No hay gastos adeudados</Text>
-            )}
-          </Card.Content>
-        </Card>
+                ))
+              ) : (
+                <Text style={styles.emptyText}>No hay gastos adeudados</Text>
+              )}
+            </Card.Content>
+          </Card>
+        )}
 
         {/* Listado de pagos */}
         <Card style={styles.card}>

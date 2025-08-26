@@ -211,9 +211,16 @@ export default function NuevoGastoScreen() {
       }
 
       // Filtrar favoritos que no estén ya agregados como participantes
-      const favoritosFiltrados = favoritosData?.filter((favorito: any) => 
-        !participantes.find(p => p.usuario_id === favorito.usuario_id)
-      ) || []
+      const favoritosFiltrados = favoritosData?.filter((favorito: any) => {
+        // Para favoritos con usuario registrado
+        if (favorito.usuario_favorito_id) {
+          return !participantes.find(p => p.usuario_id === favorito.usuario_favorito_id)
+        }
+        // Para favoritos sin usuario registrado (solo nombre)
+        return !participantes.find(p => 
+          p.nickname === favorito.nombre_favorito && !p.usuario_id
+        )
+      }) || []
 
       setFavoritos(favoritosFiltrados)
     } catch (error) {
@@ -223,17 +230,62 @@ export default function NuevoGastoScreen() {
     }
   }
 
+  const validarParticipanteDuplicado = (nuevoParticipante: { nickname: string, email?: string, usuario_id?: string }): boolean => {
+    const participantesArray = Array.isArray(participantes) ? participantes : []
+    
+    // Verificar duplicado por usuario_id (usuarios registrados)
+    if (nuevoParticipante.usuario_id) {
+      const duplicadoPorId = participantesArray.some(p => p.usuario_id === nuevoParticipante.usuario_id)
+      if (duplicadoPorId) {
+        showAlert('Error', 'Este usuario ya está agregado como participante')
+        return true
+      }
+    }
+    
+    // Verificar duplicado por email (si ambos tienen email)
+    if (nuevoParticipante.email) {
+      const duplicadoPorEmail = participantesArray.some(p => 
+        p.email && p.email.toLowerCase() === nuevoParticipante.email!.toLowerCase()
+      )
+      if (duplicadoPorEmail) {
+        showAlert('Error', 'Ya existe un participante con este email')
+        return true
+      }
+    }
+    
+    // Verificar duplicado por nickname (para participantes sin usuario registrado)
+    if (!nuevoParticipante.usuario_id) {
+      const duplicadoPorNombre = participantesArray.some(p => 
+        !p.usuario_id && p.nickname.toLowerCase().trim() === nuevoParticipante.nickname.toLowerCase().trim()
+      )
+      if (duplicadoPorNombre) {
+        showAlert('Error', 'Ya existe un participante con este nombre')
+        return true
+      }
+    }
+    
+    return false
+  }
+
   const agregarParticipanteNoUsuario = () => {
     if (!nuevoParticipante.nickname.trim()) {
       showAlert('Error', 'El nombre es requerido')
       return
     }
 
-    const participante: ParticipanteForm = {
-      tempId: Date.now().toString(),
+    const participanteData = {
       nickname: nuevoParticipante.nickname.trim(),
       email: undefined,
       usuario_id: undefined
+    }
+
+    if (validarParticipanteDuplicado(participanteData)) {
+      return
+    }
+
+    const participante: ParticipanteForm = {
+      tempId: Date.now().toString(),
+      ...participanteData
     }
 
     setParticipantes([...participantes, participante])
@@ -243,11 +295,19 @@ export default function NuevoGastoScreen() {
   const agregarUsuarioEncontrado = () => {
     if (!usuarioEncontrado) return
 
-    const participante: ParticipanteForm = {
-      tempId: Date.now().toString(),
+    const participanteData = {
       nickname: usuarioEncontrado.nickname,
       email: usuarioEncontrado.email,
       usuario_id: usuarioEncontrado.id
+    }
+
+    if (validarParticipanteDuplicado(participanteData)) {
+      return
+    }
+
+    const participante: ParticipanteForm = {
+      tempId: Date.now().toString(),
+      ...participanteData
     }
 
     setParticipantes([...participantes, participante])
@@ -257,11 +317,19 @@ export default function NuevoGastoScreen() {
   const agregarFavoritoSeleccionado = () => {
     if (!favoritoSeleccionado) return
 
+    const participanteData = {
+      nickname: favoritoSeleccionado.nickname || favoritoSeleccionado.nombre_favorito,
+      email: favoritoSeleccionado.email_favorito,
+      usuario_id: favoritoSeleccionado.usuario_favorito_id
+    }
+
+    if (validarParticipanteDuplicado(participanteData)) {
+      return
+    }
+
     const participante: ParticipanteForm = {
       tempId: Date.now().toString(),
-      nickname: favoritoSeleccionado.nickname,
-      email: favoritoSeleccionado.email,
-      usuario_id: favoritoSeleccionado.usuario_id
+      ...participanteData
     }
 
     setParticipantes([...participantes, participante])
@@ -927,12 +995,13 @@ export default function NuevoGastoScreen() {
 
                       </View>
                       <View style={styles.participanteActions}>
-                        <IconButton
-                          icon="delete"
-                          size={20}
-                          onPress={() => eliminarParticipante(participante.tempId)}
-                          disabled={tipo === 'personal' && participante.tempId === 'usuario-actual'}
-                        />
+                        {participante.tempId !== 'usuario-actual' && (
+                          <IconButton
+                            icon="delete"
+                            size={20}
+                            onPress={() => eliminarParticipante(participante.tempId)}
+                          />
+                        )}
                       </View>
                     </View>
                   </Card.Content>
@@ -1145,23 +1214,23 @@ export default function NuevoGastoScreen() {
                       <View style={styles.favoritosList}>
                         {favoritos.map((favorito) => (
                           <Card 
-                            key={favorito.usuario_id} 
+                            key={favorito.id} 
                             style={[
                               styles.favoritoCard,
-                              favoritoSeleccionado?.usuario_id === favorito.usuario_id && styles.favoritoSeleccionado
+                              favoritoSeleccionado?.id === favorito.id && styles.favoritoSeleccionado
                             ]}
                             onPress={() => setFavoritoSeleccionado(favorito)}
                           >
                             <Card.Content>
                               <Text style={styles.favoritoNombre}>
-                                {favorito.nickname}
+                                {favorito.nickname || favorito.nombre_favorito}
                               </Text>
                               <Text style={styles.favoritoEmail}>
-                                {favorito.email}
+                                {favorito.email_favorito}
                               </Text>
-                              <Text style={styles.favoritoFrecuencia}>
+                              {/* <Text style={styles.favoritoFrecuencia}>
                                 Usado {favorito.frecuencia_uso} {favorito.frecuencia_uso === 1 ? 'vez' : 'veces'}
-                              </Text>
+                              </Text> */}
                             </Card.Content>
                           </Card>
                         ))}
