@@ -18,7 +18,7 @@ import {
   IconButton,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
-import { supabase, gastosService, pagosService, resumenService, Gasto, Pago, TipoGasto, DatosResumenMensual } from '../../lib/supabase'
+import { supabase, gastosService, pagosService, resumenService, Gasto, Pago, TipoGasto, DatosResumenMensual, GastoPorPagar, GastoAdeudado } from '../../lib/supabase'
 import { showAlert } from '../../lib/alerts'
 import { useFocusEffect } from '@react-navigation/native'
 import { PieChart } from 'react-native-chart-kit'
@@ -61,6 +61,8 @@ export default function ResumenScreen() {
   })
   const [datosResumen, setDatosResumen] = useState<DatosResumenMensual | null>(null)
   const [pagosMes, setPagosMes] = useState<PagoMes[]>([])
+  const [gastosPorPagar, setGastosPorPagar] = useState<GastoPorPagar[]>([])
+  const [gastosAdeudados, setGastosAdeudados] = useState<GastoAdeudado[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const { mesActual, añoActual, navegarMesAnterior, navegarMesSiguiente, irMesActual } = useMonth()
 
@@ -119,6 +121,14 @@ export default function ResumenScreen() {
         }))
       
       setPagosMes(pagosFormateados)
+      
+      // Obtener gastos por pagar
+      const gastosPorPagarData = await resumenService.obtenerGastosPorPagar(user.id, mesActual, añoActual)
+      setGastosPorPagar(gastosPorPagarData)
+      
+      // Obtener gastos adeudados
+      const gastosAdeudadosData = await resumenService.obtenerGastosAdeudados(user.id, mesActual, añoActual)
+      setGastosAdeudados(gastosAdeudadosData)
     } catch (error) {
       console.error('Error cargando datos:', error)
       showAlert('Error', 'No se pudieron cargar los datos')
@@ -170,15 +180,11 @@ export default function ResumenScreen() {
       name: `Fijo`,
       population: estadisticas.gastosFijos,
       color: '#FF6B6B',
-      legendFontColor: '#333',
-      legendFontSize: 12,
     }] : []),
     ...(estadisticas.gastosVariables > 0 ? [{
       name: `Variable`, 
       population: estadisticas.gastosVariables,
       color: '#4ECDC4',
-      legendFontColor: '#333',
-      legendFontSize: 12,
     }] : [])
   ]
 
@@ -226,14 +232,25 @@ export default function ResumenScreen() {
               <View style={styles.chartContainer}>
                 <PieChart
                   data={datosGrafico}
-                  width={width - 64}
+                  width={width - 54}
                   height={200}
                   chartConfig={chartConfig}
                   accessor="population"
                   backgroundColor="transparent"
-                  paddingLeft="15"
                   absolute
+                  hasLegend={true}
                 />
+                {/* Leyendas personalizadas */}
+                {/* <View style={styles.legendContainer}>
+                  {datosGrafico.map((item, index) => (
+                    <View key={index} style={styles.legendItem}>
+                      <View style={[styles.legendColor, { backgroundColor: item.color }]} />
+                      <Text style={styles.legendText}>
+                        {item.name}: {formatearMonto(item.population)}
+                      </Text>
+                    </View>
+                  ))}
+                </View> */}
               </View>
             </Card.Content>
           </Card>
@@ -257,6 +274,84 @@ export default function ResumenScreen() {
                 <Text style={styles.estadisticaLabel}>Me Adeudan</Text>
               </View>
             </View>
+          </Card.Content>
+        </Card>
+
+        {/* Gastos por pagar */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Title style={styles.cardTitle}>Gastos por Pagar ({gastosPorPagar.length})</Title>
+            {gastosPorPagar.length > 0 ? (
+              gastosPorPagar.map((gasto) => (
+                <View key={gasto.gasto_detalle_id} style={styles.pagoItem}>
+                  <View style={styles.pagoInfo}>
+                    <Text style={styles.pagoDescripcion} numberOfLines={1}>
+                      {gasto.descripcion}
+                    </Text>
+                    <Text style={styles.pagoParticipante}>
+                      Creado por: {gasto.usuario_creador_nickname}
+                    </Text>
+                    <Text style={styles.pagoVencimiento}>
+                      Vencimiento: {formatearFecha(gasto.vencimiento)} • Cuota {gasto.numero_cuota}
+                    </Text>
+                    {gasto.es_recurrente && (
+                      <Text style={[styles.pagoVencimiento, { color: '#9C27B0' }]}>
+                        Recurrente
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.pagoMeta}>
+                    <Text style={[styles.pagoMonto, { color: '#FF5722' }]}>
+                      {formatearMonto(gasto.monto_pendiente)}
+                    </Text>
+                    <Text style={styles.pagoFecha}>
+                      de {formatearMonto(gasto.monto)}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>No hay gastos pendientes de pago</Text>
+            )}
+          </Card.Content>
+        </Card>
+
+        {/* Gastos adeudados */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Title style={styles.cardTitle}>Me Adeudan ({gastosAdeudados.length})</Title>
+            {gastosAdeudados.length > 0 ? (
+              gastosAdeudados.map((gasto) => (
+                <View key={gasto.gasto_detalle_id} style={styles.pagoItem}>
+                  <View style={styles.pagoInfo}>
+                    <Text style={styles.pagoDescripcion} numberOfLines={1}>
+                      {gasto.descripcion}
+                    </Text>
+                    <Text style={styles.pagoParticipante}>
+                      Debe: {gasto.usuario_deudor_nickname}
+                    </Text>
+                    <Text style={styles.pagoVencimiento}>
+                      Vencimiento: {formatearFecha(gasto.vencimiento)} • Cuota {gasto.numero_cuota}
+                    </Text>
+                    {gasto.es_recurrente && (
+                      <Text style={[styles.pagoVencimiento, { color: '#9C27B0' }]}>
+                        Recurrente
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.pagoMeta}>
+                    <Text style={[styles.pagoMonto, { color: '#4CAF50' }]}>
+                      {formatearMonto(gasto.monto_pendiente)}
+                    </Text>
+                    <Text style={styles.pagoFecha}>
+                      de {formatearMonto(gasto.monto)}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>No hay gastos adeudados</Text>
+            )}
           </Card.Content>
         </Card>
 
@@ -441,5 +536,29 @@ const styles = StyleSheet.create({
     color: '#666',
     fontStyle: 'italic',
     paddingVertical: 20,
+  },
+  legendContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+    marginHorizontal: 8,
+  },
+  legendColor: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  legendText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
   },
 })

@@ -715,100 +715,67 @@ export const gastosService = {
     }
   },
 
-  // Crear gasto
+  // Crear gasto usando función RPC completa
   async crearGasto(gasto: GastoCreate, userId: string) {
-    // Crear el gasto principal
-    const { data: nuevoGasto, error: gastoError } = await supabase
-      .from('gastos')
-      .insert({
-        usuario_id: userId,
-        descripcion: gasto.descripcion,
-        monto: gasto.monto_total,
-        tipo: gasto.tipo,
-        fecha: gasto.fecha,
-        cuotas: gasto.cuotas,
-        descuento: gasto.descuento || 0,
-        tipo_descuento: gasto.tipo_descuento || 'uniforme',
-        es_recurrente: gasto.es_recurrente || false,
-        gasto_padre_id: gasto.gasto_padre_id || null
+    // Preparar participantes en formato JSONB
+    const participantesJsonb = gasto.participantes.map(p => ({
+      usuario_id: p.usuario_id || null,
+      nickname: p.nickname
+    }))
+    
+    // Llamar a la función RPC que maneja todo el proceso
+    const { data: resultado, error } = await supabase
+      .rpc('crear_gasto_completo', {
+        p_descripcion: gasto.descripcion,
+        p_monto_total: gasto.monto_total,
+        p_tipo: gasto.tipo,
+        p_fecha: gasto.fecha,
+        p_cuotas: gasto.cuotas,
+        p_participantes: participantesJsonb,
+        p_primer_vencimiento: gasto.primer_vencimiento,
+        p_descuento: gasto.descuento || 0,
+        p_tipo_descuento: gasto.tipo_descuento || 'uniforme',
+        p_pagado: gasto.pagado || false,
+        p_es_recurrente: gasto.es_recurrente || false,
+        p_gasto_padre_id: gasto.gasto_padre_id || null
       })
-      .select()
-      .single()
     
-    if (gastoError) throw gastoError
-    
-    // Crear detalles para cada participante y cuota
-    const detalles: GastoDetalleCreate[] = []
-    
-    // Calcular montos de cuotas con descuento aplicado
-    const montosCalculados = calcularMontosConDescuento(
-      gasto.monto_total,
-      gasto.cuotas,
-      gasto.descuento || 0,
-      gasto.tipo_descuento || 'uniforme'
-    )
-    
-    // Iterar primero por cada cuota, luego por cada participante
-    for (let cuota = 1; cuota <= gasto.cuotas; cuota++) {
-      const fechaVencimiento = new Date(gasto.primer_vencimiento)
-      fechaVencimiento.setMonth(fechaVencimiento.getMonth() + (cuota - 1))
-      
-      for (const participante of gasto.participantes) {
-        const montoPorParticipante = Math.round((montosCalculados[cuota - 1] / gasto.participantes.length) * 100) / 100
-        
-        detalles.push({
-          gasto_id: nuevoGasto.id,
-          usuario_id: participante.usuario_id,
-          nombre_participante: participante.usuario_id ? null : participante.nickname,
-          monto: montoPorParticipante,
-          pagado: gasto.pagado || false || montoPorParticipante === 0,
-          vencimiento: fechaVencimiento.toISOString().split('T')[0],
-          numero_cuota: cuota
-        })
-      }
+    if (error) {
+      console.error('Error en función RPC crear_gasto_completo:', error)
+      throw error
     }
     
-    const { data: detallesCreados, error: detallesError } = await supabase
-      .from('gastos_detalle')
-      .insert(detalles)
-      .select()
-    
-    if (detallesError) throw detallesError
-    
-    // Si el gasto está marcado como pagado, crear pagos automáticos
-    if (gasto.pagado && detallesCreados) {
-      const pagosParaCrear = detallesCreados
-        .filter(detalle => detalle.monto > 0) // Solo crear pagos para montos mayores a 0
-        .map(detalle => ({
-          gasto_detalle_id: detalle.id,
-          monto: detalle.monto,
-          medio_pago: 'efectivo' as MedioPago,
-          fecha_pago: new Date().toISOString().split('T')[0]
-        }))
-      
-      if (pagosParaCrear.length > 0) {
-        const { error: pagosError } = await supabase
-          .from('pagos')
-          .insert(pagosParaCrear)
-        
-        if (pagosError) {
-          console.warn('Error al crear pagos automáticos:', pagosError)
-          // No lanzamos el error para no interrumpir la creación del gasto principal
-        }
-      }
+    // Verificar si la función RPC retornó un error
+    if (resultado && !resultado.success) {
+      throw new Error(resultado.error || 'Error desconocido al crear el gasto')
     }
     
     // Si el gasto está marcado como pagado y es recurrente, generar automáticamente el siguiente gasto
-    if (gasto.pagado && gasto.es_recurrente) {
+    if (gasto.pagado && gasto.es_recurrente && resultado?.gasto_id) {
       try {
-        await this.generarGastoRecurrente(nuevoGasto.id, userId)
+        await this.generarGastoRecurrente(resultado.gasto_id, userId)
       } catch (error) {
         console.warn('Error al generar gasto recurrente automáticamente:', error)
         // No lanzamos el error para no interrumpir la creación del gasto principal
       }
     }
     
-    return nuevoGasto
+    // Retornar el gasto creado (simulamos la estructura esperada)
+    return {
+      id: resultado?.gasto_id,
+      usuario_id: userId,
+      descripcion: gasto.descripcion,
+      monto: gasto.monto_total,
+      tipo: gasto.tipo,
+      fecha: gasto.fecha,
+      cuotas: gasto.cuotas,
+      descuento: gasto.descuento || 0,
+      tipo_descuento: gasto.tipo_descuento || 'uniforme',
+      es_recurrente: gasto.es_recurrente || false,
+      gasto_padre_id: gasto.gasto_padre_id || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
   },
 
   // Generar gasto recurrente para el mes siguiente
@@ -1054,6 +1021,33 @@ export const gastosService = {
       p_usuario_id: userId,
       p_nueva_descripcion: nuevaDescripcion || null,
       p_nuevo_monto: nuevoMonto || null
+    })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (!data.success) {
+      throw new Error(data.error)
+    }
+
+    return data
+  },
+
+  // Cambiar participante en gasto con validación de pagos
+  async cambiarParticipanteGasto(
+    gastoId: string, 
+    userId: string, 
+    detalleIdOriginal: string, 
+    nuevoUsuarioId?: string, 
+    nuevoNombreParticipante?: string
+  ) {
+    const { data, error } = await supabase.rpc('cambiar_participante_gasto', {
+      p_gasto_id: gastoId,
+      p_usuario_id: userId,
+      p_detalle_id_original: detalleIdOriginal,
+      p_nuevo_usuario_id: nuevoUsuarioId || null,
+      p_nuevo_nombre_participante: nuevoNombreParticipante || null
     })
 
     if (error) {
@@ -1313,17 +1307,16 @@ export const solicitudesPagoService = {
   // Aceptar una solicitud de pago
   async aceptarSolicitud(solicitudId: string, usuarioCreadorId: string) {
     try {
-      console.log('Aceptar solicitud:', solicitudId, usuarioCreadorId)
+      console.log('Aceptar solicitud:', solicitudId)
 
       const { data, error } = await supabase.rpc('aceptar_solicitud_pago', {
-          solicitud_id_param: solicitudId,
-          usuario_creador_id_param: usuarioCreadorId
+          solicitud_id_param: solicitudId
         })
 
       if (error) throw error
       return data
     } catch (error: any) {
-      console.error('Error al aceptar solivvcitud:', error)
+      console.error('Error al aceptar solicitud:', error)
       throw error
     }
   },
@@ -1333,8 +1326,7 @@ export const solicitudesPagoService = {
     try {
       const { data, error } = await supabase
         .rpc('rechazar_solicitud_pago', {
-          solicitud_id_param: solicitudId,
-          usuario_creador_id_param: usuarioCreadorId
+          solicitud_id_param: solicitudId
         })
 
       if (error) throw error
@@ -1360,6 +1352,37 @@ export interface DatosResumenMensual {
   cantidad_gastos_variables: number
   cantidad_detalles_por_pagar: number
   cantidad_detalles_adeudados: number
+}
+
+export interface GastoPorPagar {
+  gasto_detalle_id: string
+  gasto_id: string
+  descripcion: string
+  monto: number
+  monto_pagado: number
+  monto_pendiente: number
+  vencimiento: string
+  numero_cuota: number
+  tipo_gasto: TipoGasto
+  es_recurrente: boolean
+  usuario_creador_nickname: string
+  usuario_creador_email: string
+}
+
+export interface GastoAdeudado {
+  gasto_detalle_id: string
+  gasto_id: string
+  descripcion: string
+  monto: number
+  monto_pagado: number
+  monto_pendiente: number
+  vencimiento: string
+  numero_cuota: number
+  tipo_gasto: TipoGasto
+  es_recurrente: boolean
+  usuario_deudor_id: string
+  usuario_deudor_nickname: string
+  usuario_deudor_email: string
 }
 
 export const resumenService = {
@@ -1397,6 +1420,56 @@ export const resumenService = {
       return resultado as DatosResumenMensual;
     } catch (error) {
       console.error('Error en obtenerDatosResumenMensual:', error);
+      throw error;
+    }
+  },
+
+  // Obtener gastos propios por pagar
+  async obtenerGastosPorPagar(userId: string, mes?: number, año?: number): Promise<GastoPorPagar[]> {
+    try {
+      console.log(`[DEBUG] Obteniendo gastos por pagar para userId: ${userId}, mes: ${mes}, año: ${año}`);
+      
+      const { data, error } = await supabase
+        .rpc('obtener_gastos_por_pagar', {
+          p_usuario_id: userId,
+          p_mes: mes || null,
+          p_año: año || null
+        })
+      
+      if (error) {
+        console.error('Error al obtener gastos por pagar:', error);
+        throw error;
+      }
+      
+      console.log('[DEBUG] Gastos por pagar obtenidos:', data);
+      return data || [];
+    } catch (error) {
+      console.error('Error en obtenerGastosPorPagar:', error);
+      throw error;
+    }
+  },
+
+  // Obtener gastos que me adeudan
+  async obtenerGastosAdeudados(userId: string, mes?: number, año?: number): Promise<GastoAdeudado[]> {
+    try {
+      console.log(`[DEBUG] Obteniendo gastos adeudados para userId: ${userId}, mes: ${mes}, año: ${año}`);
+      
+      const { data, error } = await supabase
+        .rpc('obtener_gastos_adeudados', {
+          p_usuario_id: userId,
+          p_mes: mes || null,
+          p_año: año || null
+        })
+      
+      if (error) {
+        console.error('Error al obtener gastos adeudados:', error);
+        throw error;
+      }
+      
+      console.log('[DEBUG] Gastos adeudados obtenidos:', data);
+      return data || [];
+    } catch (error) {
+      console.error('Error en obtenerGastosAdeudados:', error);
       throw error;
     }
   }

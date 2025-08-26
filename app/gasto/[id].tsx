@@ -23,11 +23,12 @@ import {
   Modal,
   Portal,
   TextInput,
+  SegmentedButtons,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
 import { supabase, gastosService, pagosService, Gasto, GastoDetalle, GastoCuotaUnificada } from '../../lib/supabase'
-import { showAlert, showSuccessToast, showConfirm } from '../../lib/alerts'
+import { showAlert, showConfirm } from '../../lib/alerts'
 import RecurringIcon from '../../components/RecurringIcon'
 
 export default function GastoDetalleScreen() {
@@ -45,6 +46,15 @@ export default function GastoDetalleScreen() {
   const [nuevaDescripcion, setNuevaDescripcion] = useState('')
   const [nuevoMontoGasto, setNuevoMontoGasto] = useState('')
   const [tienePagosAsociados, setTienePagosAsociados] = useState(false)
+  
+  // Estados para cambio de participante
+  const [cambiarParticipanteModalVisible, setCambiarParticipanteModalVisible] = useState(false)
+  const [participanteACambiar, setParticipanteACambiar] = useState<GastoDetalle | null>(null)
+  const [tabSeleccionada, setTabSeleccionada] = useState('no-usuario')
+  const [nuevoParticipante, setNuevoParticipante] = useState({ nickname: '', email: '' })
+  const [emailBusqueda, setEmailBusqueda] = useState('')
+  const [usuarioEncontrado, setUsuarioEncontrado] = useState<any>(null)
+  const [buscandoUsuario, setBuscandoUsuario] = useState(false)
 
 
   useEffect(() => {
@@ -207,7 +217,7 @@ export default function GastoDetalleScreen() {
         if (updateError) throw updateError
       }
 
-      showSuccessToast('Pago registrado correctamente')
+      showAlert('Éxito', 'Pago registrado correctamente')
       // Recargar los datos
       if (gastoId && numeroCuota) {
         cargarGastoDetalle(gastoId, numeroCuota)
@@ -333,11 +343,100 @@ export default function GastoDetalleScreen() {
     return deudas
   }
 
-  // Función para manejar la edición del monto
-  const handleEditMonto = (detalle: GastoDetalle) => {
-    setEditingDetalle(detalle)
-    setNuevoMonto(detalle.monto.toString())
-    setEditModalVisible(true)
+  // Función para manejar el cambio de participante
+  const handleCambiarParticipante = (detalle: GastoDetalle) => {
+    setParticipanteACambiar(detalle)
+    setCambiarParticipanteModalVisible(true)
+  }
+
+  // Función para buscar usuario por email
+  const buscarUsuarioPorEmail = async () => {
+    if (!emailBusqueda.trim()) return
+    
+    setBuscandoUsuario(true)
+    try {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('id, nickname, email')
+        .eq('email', emailBusqueda.trim().toLowerCase())
+        .single()
+      
+      if (error || !data) {
+        showAlert('Usuario no encontrado', 'No se encontró un usuario con ese email')
+        setUsuarioEncontrado(null)
+      } else {
+        setUsuarioEncontrado(data)
+      }
+    } catch (error) {
+      console.error('Error buscando usuario:', error)
+      showAlert('Error', 'Error al buscar el usuario')
+    } finally {
+      setBuscandoUsuario(false)
+    }
+  }
+
+  // Función para cerrar modal de cambio de participante
+  const cerrarModalCambiarParticipante = () => {
+    setCambiarParticipanteModalVisible(false)
+    setParticipanteACambiar(null)
+    setTabSeleccionada('no-usuario')
+    setNuevoParticipante({ nickname: '', email: '' })
+    setEmailBusqueda('')
+    setUsuarioEncontrado(null)
+    setBuscandoUsuario(false)
+  }
+
+  // Función para cambiar participante sin usuario
+  const cambiarParticipanteNoUsuario = async () => {
+    if (!participanteACambiar || !nuevoParticipante.nickname.trim()) {
+      showAlert('Error', 'El nombre es requerido')
+      return
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      await gastosService.cambiarParticipanteGasto(
+        gastoBase!.id,
+        user.id,
+        participanteACambiar.id,
+        undefined,
+        nuevoParticipante.nickname.trim()
+      )
+
+      showAlert('Éxito', 'Participante cambiado correctamente')
+      cerrarModalCambiarParticipante()
+      cargarGastoDetalle(gastoId, numeroCuota)
+    } catch (error: any) {
+      console.error('Error cambiando participante:', error)
+      showAlert('Error', error.message || 'No se pudo cambiar el participante')
+    }
+  }
+
+  // Función para cambiar a usuario encontrado
+  const cambiarAUsuarioEncontrado = async () => {
+    if (!participanteACambiar || !usuarioEncontrado) return
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      await gastosService.cambiarParticipanteGasto(
+        gastoBase!.id,
+        user.id,
+        participanteACambiar.id,
+        usuarioEncontrado.id,
+        undefined
+      )
+
+      showAlert('Éxito', 'Participante cambiado correctamente')
+      cerrarModalCambiarParticipante()
+      cargarGastoDetalle(gastoId, numeroCuota)
+    } catch (error: any) {
+      console.error('Error cambiando participante:', error)
+      showAlert('Error', error.message || 'No se pudo cambiar el participante')
+    }
   }
 
   // Función para guardar el nuevo monto
@@ -357,7 +456,7 @@ export default function GastoDetalleScreen() {
       // Usar la función de supabase que maneja todo el recálculo
       await gastosService.actualizarMontoDetalle(editingDetalle.id, montoNumerico, user.id)
 
-      showSuccessToast('Monto actualizado correctamente')
+      showAlert('Éxito', 'Monto actualizado correctamente')
       setEditModalVisible(false)
       setEditingDetalle(null)
       setNuevoMonto('')
@@ -440,7 +539,7 @@ export default function GastoDetalleScreen() {
         montoNumerico
       )
 
-      showSuccessToast('Gasto actualizado correctamente')
+      showAlert('Éxito', 'Gasto actualizado correctamente')
       setEditGastoModalVisible(false)
       setNuevaDescripcion('')
       setNuevoMontoGasto('')
@@ -535,7 +634,7 @@ export default function GastoDetalleScreen() {
           onPress: async () => {
             try {
               await pagosService.eliminarPago(pagoId)
-              showSuccessToast('Pago eliminado correctamente')
+              showAlert('Éxito', 'Pago eliminado correctamente')
               // Recargar los datos
               if (gastoId && numeroCuota) {
                 cargarGastoDetalle(gastoId, numeroCuota)
@@ -704,13 +803,13 @@ export default function GastoDetalleScreen() {
                         description={
                           <View style={styles.montoDescriptionContainer}>
                             <Text>{formatearMonto(detalle.monto)} - {formatearMonto(getSaldoPagado(detalle))} pagado</Text>
-                            {!tienePagos && (
+                            {(!tienePagos) && detalle.usuario_id !== gastoBase.usuario_id && (
                               <IconButton
-                                icon="pencil"
+                                icon="account-edit-outline" 
                                 size={16}
                                 iconColor="#666"
                                 style={styles.editIcon}
-                                onPress={() => handleEditMonto(detalle)}
+                                onPress={() => handleCambiarParticipante(detalle)}
                               />
                             )}
                           </View>
@@ -836,14 +935,14 @@ export default function GastoDetalleScreen() {
           </Button>
         )}
 
-        <Button
+        {/* <Button
           mode="outlined"
           onPress={() => router.push(`/gastos/editar/${gastoId}`)}
           style={styles.actionButton}
           icon="pencil"
         >
           Editar Gasto
-        </Button>
+        </Button> */}
       </View>
 
       {/* Resumen de deudas */}
@@ -945,6 +1044,129 @@ export default function GastoDetalleScreen() {
             >
               Guardar
             </Button>
+          </View>
+        </Modal>
+
+        {/* Modal de cambio de participante */}
+        <Modal
+          visible={cambiarParticipanteModalVisible}
+          onDismiss={cerrarModalCambiarParticipante}
+          contentContainerStyle={{
+            backgroundColor: 'white',
+            padding: 20,
+            margin: 20,
+            borderRadius: 8,
+            maxHeight: '80%',
+          }}
+        >
+          <Title>Cambiar Participante</Title>
+          <Paragraph style={{ marginBottom: 16 }}>
+            Participante actual: {participanteACambiar?.usuario?.nickname || participanteACambiar?.nombre_participante || 'Participante'}
+          </Paragraph>
+          
+          {/* Pestañas */}
+          <SegmentedButtons
+            value={tabSeleccionada}
+            onValueChange={setTabSeleccionada}
+            buttons={[
+              { 
+                value: 'no-usuario', 
+                label: 'Sin Usuario',
+                style: { flex: 1 }
+              },
+              { 
+                value: 'buscar-usuario', 
+                label: 'Buscar Usuario',
+                style: { flex: 1 }
+              }
+            ]}
+            style={{ marginBottom: 16 }}
+          />
+
+          {/* Contenido de la pestaña "Sin Usuario" */}
+          {tabSeleccionada === 'no-usuario' && (
+            <View style={{ marginTop: 8 }}>
+              <Paragraph style={{ fontSize: 14, color: '#666', marginBottom: 16 }}>
+                Cambiar a un participante que no tiene cuenta en la app
+              </Paragraph>
+              <TextInput
+                label="Nombre del participante *"
+                value={nuevoParticipante.nickname}
+                onChangeText={(text) => 
+                  setNuevoParticipante({ ...nuevoParticipante, nickname: text })
+                }
+                mode="outlined"
+                style={{ marginBottom: 16 }}
+              />
+            </View>
+          )}
+
+          {/* Contenido de la pestaña "Buscar Usuario" */}
+          {tabSeleccionada === 'buscar-usuario' && (
+            <View style={{ marginTop: 8 }}>
+              <Paragraph style={{ fontSize: 14, color: '#666', marginBottom: 16 }}>
+                Buscar un usuario registrado por su email
+              </Paragraph>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 16 }}>
+                <TextInput
+                  label="Email del usuario *"
+                  value={emailBusqueda}
+                  onChangeText={setEmailBusqueda}
+                  keyboardType="email-address"
+                  mode="outlined"
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  mode="contained"
+                  onPress={buscarUsuarioPorEmail}
+                  loading={buscandoUsuario}
+                  disabled={buscandoUsuario || !emailBusqueda.trim()}
+                >
+                  Buscar
+                </Button>
+              </View>
+              
+              {/* Usuario encontrado */}
+              {usuarioEncontrado && (
+                <Card style={{ marginTop: 16, backgroundColor: '#e8f5e8' }}>
+                  <Card.Content>
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2e7d32' }}>
+                      {usuarioEncontrado.nickname}
+                    </Text>
+                    <Text style={{ fontSize: 14, color: '#4caf50' }}>
+                      {usuarioEncontrado.email}
+                    </Text>
+                  </Card.Content>
+                </Card>
+              )}
+            </View>
+          )}
+          
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+            <Button
+              mode="outlined"
+              onPress={cerrarModalCambiarParticipante}
+            >
+              Cancelar
+            </Button>
+            
+            {tabSeleccionada === 'no-usuario' ? (
+              <Button
+                mode="contained"
+                onPress={cambiarParticipanteNoUsuario}
+                disabled={!nuevoParticipante.nickname.trim()}
+              >
+                Cambiar
+              </Button>
+            ) : (
+              <Button
+                mode="contained"
+                onPress={cambiarAUsuarioEncontrado}
+                disabled={!usuarioEncontrado}
+              >
+                Cambiar Usuario
+              </Button>
+            )}
           </View>
         </Modal>
       </Portal>

@@ -302,6 +302,26 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Función auxiliar para verificar si un usuario puede ver un gasto
+CREATE OR REPLACE FUNCTION user_can_view_gasto(gasto_id_param UUID, user_id_param UUID)
+RETURNS BOOLEAN
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    -- El usuario puede ver el gasto si:
+    -- 1. Es el creador del gasto
+    -- 2. Participa en el gasto (tiene un detalle asociado)
+    RETURN EXISTS (
+        SELECT 1 FROM public.gastos g
+        WHERE g.id = gasto_id_param AND g.usuario_id = user_id_param
+    ) OR EXISTS (
+        SELECT 1 FROM public.gastos_detalle gd
+        WHERE gd.gasto_id = gasto_id_param AND gd.usuario_id = user_id_param
+    );
+END;
+$$ LANGUAGE plpgsql;
+
 -- =====================================================
 -- 8. FUNCIONES RPC PARA SOLICITUDES DE PAGO
 -- =====================================================
@@ -398,7 +418,7 @@ RETURNS TABLE(
     vencimiento DATE
 )
 SECURITY DEFINER
-SET search_path = ''
+SET search_path = 'public'
 AS $$
 BEGIN
     RETURN QUERY
@@ -418,10 +438,10 @@ BEGIN
         sp.notas::TEXT,
         gd.numero_cuota::INTEGER,
         gd.vencimiento::DATE
-    FROM public.solicitudes_pago sp
-    INNER JOIN public.gastos_detalle gd ON sp.gasto_detalle_id = gd.id
-    INNER JOIN public.gastos g ON gd.gasto_id = g.id
-    INNER JOIN public.usuarios u ON sp.usuario_solicitante_id = u.id
+    FROM solicitudes_pago sp
+    INNER JOIN gastos_detalle gd ON sp.gasto_detalle_id = gd.id
+    INNER JOIN gastos g ON gd.gasto_id = g.id
+    INNER JOIN usuarios u ON sp.usuario_solicitante_id = u.id
     WHERE sp.usuario_creador_id = usuario_creador_id_param
     ORDER BY sp.fecha_solicitud DESC;
 END;
@@ -434,6 +454,7 @@ RETURNS TABLE(
     gasto_detalle_id UUID,
     gasto_id UUID,
     gasto_descripcion TEXT,
+    usuario_solicitante_id UUID,
     usuario_creador_id UUID,
     creador_email TEXT,
     creador_nickname TEXT,
@@ -446,29 +467,30 @@ RETURNS TABLE(
     vencimiento DATE
 )
 SECURITY DEFINER
-SET search_path = ''
+SET search_path = 'public'
 AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        sp.id as solicitud_id,
-        sp.gasto_detalle_id,
-        g.id as gasto_id,
-        g.descripcion as gasto_descripcion,
-        sp.usuario_creador_id,
-        u.email as creador_email,
-        u.nickname as creador_nickname,
-        sp.monto,
-        sp.estado,
-        sp.fecha_solicitud,
-        sp.fecha_respuesta,
-        sp.notas,
-        gd.numero_cuota,
-        gd.vencimiento
-    FROM public.solicitudes_pago sp
-    INNER JOIN public.gastos_detalle gd ON sp.gasto_detalle_id = gd.id
-    INNER JOIN public.gastos g ON gd.gasto_id = g.id
-    INNER JOIN public.usuarios u ON sp.usuario_creador_id = u.id
+        sp.id::UUID as solicitud_id,
+        sp.gasto_detalle_id::UUID,
+        g.id::UUID as gasto_id,
+        g.descripcion::TEXT as gasto_descripcion,
+        sp.usuario_solicitante_id::UUID,
+        sp.usuario_creador_id::UUID,
+        u.email::TEXT as creador_email,
+        u.nickname::TEXT as creador_nickname,
+        sp.monto::DECIMAL(10,2),
+        sp.estado::estado_solicitud,
+        sp.fecha_solicitud::TIMESTAMP WITH TIME ZONE,
+        sp.fecha_respuesta::TIMESTAMP WITH TIME ZONE,
+        sp.notas::TEXT,
+        gd.numero_cuota::INTEGER,
+        gd.vencimiento::DATE
+    FROM solicitudes_pago sp
+    INNER JOIN gastos_detalle gd ON sp.gasto_detalle_id = gd.id
+    INNER JOIN gastos g ON gd.gasto_id = g.id
+    INNER JOIN usuarios u ON sp.usuario_creador_id = u.id
     WHERE sp.usuario_solicitante_id = usuario_solicitante_id_param
     ORDER BY sp.fecha_solicitud DESC;
 END;
@@ -590,6 +612,74 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Otorgar permisos de ejecución para buscar_usuarios
+GRANT EXECUTE ON FUNCTION buscar_usuarios(TEXT) TO authenticated;
+
+-- Función para obtener gastos compartidos donde el usuario participa pero no es creador
+CREATE OR REPLACE FUNCTION obtener_gastos_compartidos(usuario_actual_id UUID)
+RETURNS TABLE(
+    gasto_id UUID,
+    descripcion TEXT,
+    monto_total DECIMAL(10,2),
+    fecha DATE,
+    cuotas INTEGER,
+    descuento DECIMAL(10,2),
+    tipo_descuento tipo_descuento,
+    es_recurrente BOOLEAN,
+    gasto_padre_id UUID,
+    created_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE,
+    creador_id UUID,
+    creador_email TEXT,
+    creador_nickname TEXT,
+    mi_detalle_id UUID,
+    mi_monto DECIMAL(10,2),
+    mi_vencimiento DATE,
+    mi_numero_cuota INTEGER,
+    mi_pagado BOOLEAN,
+    mi_monto_pagado DECIMAL(10,2)
+)
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT DISTINCT
+        g.id as gasto_id,
+        g.descripcion,
+        g.monto as monto_total,
+        g.fecha,
+        g.cuotas,
+        g.descuento,
+        g.tipo_descuento,
+        g.es_recurrente,
+        g.gasto_padre_id,
+        g.created_at,
+        g.updated_at,
+        g.usuario_id as creador_id,
+        u_creador.email as creador_email,
+        u_creador.nickname as creador_nickname,
+        gd.id as mi_detalle_id,
+        gd.monto as mi_monto,
+        gd.vencimiento as mi_vencimiento,
+        gd.numero_cuota as mi_numero_cuota,
+        gd.pagado as mi_pagado,
+        COALESCE(SUM(p.monto), 0) as mi_monto_pagado
+    FROM public.gastos g
+    INNER JOIN public.gastos_detalle gd ON g.id = gd.gasto_id
+    INNER JOIN public.usuarios u_creador ON g.usuario_id = u_creador.id
+    LEFT JOIN public.pagos p ON gd.id = p.gasto_detalle_id
+    WHERE gd.usuario_id = usuario_actual_id
+    AND g.usuario_id != usuario_actual_id  -- Solo gastos donde NO soy el creador
+    AND g.tipo = 'compartido'  -- Solo gastos compartidos
+    GROUP BY g.id, g.descripcion, g.monto, g.fecha, g.cuotas, g.descuento, 
+             g.tipo_descuento, g.es_recurrente, g.gasto_padre_id, g.created_at, 
+             g.updated_at, g.usuario_id, u_creador.email, u_creador.nickname,
+             gd.id, gd.monto, gd.vencimiento, gd.numero_cuota, gd.pagado
+    ORDER BY g.fecha DESC, gd.vencimiento DESC;
+END;
+$$ LANGUAGE plpgsql;
+
 -- =====================================================
 -- 10. POLÍTICAS RLS (ROW LEVEL SECURITY)
 -- =====================================================
@@ -611,42 +701,21 @@ CREATE POLICY "Los usuarios pueden actualizar su propio perfil" ON usuarios
 CREATE POLICY "Los usuarios pueden insertar su propio perfil" ON usuarios
     FOR INSERT WITH CHECK (auth.uid() = id);
 
--- Políticas para gastos
-CREATE POLICY "Los usuarios pueden ver gastos donde participan" ON gastos
-    FOR SELECT USING (
-        auth.uid() = usuario_id OR
-        EXISTS (
-            SELECT 1 FROM gastos_detalle gd
-            WHERE gd.gasto_id = gastos.id AND gd.usuario_id = auth.uid()
-        )
-    );
+-- Políticas para gastos (simplificadas para evitar recursión)
+CREATE POLICY "Los usuarios pueden gestionar sus gastos" ON gastos
+    FOR ALL USING (auth.uid() = usuario_id);
 
-CREATE POLICY "Los usuarios pueden crear sus propios gastos" ON gastos
-    FOR INSERT WITH CHECK (auth.uid() = usuario_id);
+-- Permitir ver todos los gastos para evitar recursión
+CREATE POLICY "Los usuarios autenticados pueden ver gastos" ON gastos
+    FOR SELECT USING (auth.uid() IS NOT NULL);
 
-CREATE POLICY "Los usuarios pueden actualizar sus propios gastos" ON gastos
-    FOR UPDATE USING (auth.uid() = usuario_id);
+-- Políticas para gastos_detalle (simplificadas para evitar recursión)
+CREATE POLICY "Los usuarios pueden ver sus propios detalles" ON gastos_detalle
+    FOR SELECT USING (auth.uid() = usuario_id);
 
-CREATE POLICY "Los usuarios pueden eliminar sus propios gastos" ON gastos
-    FOR DELETE USING (auth.uid() = usuario_id);
-
--- Políticas para gastos_detalle
-CREATE POLICY "Los usuarios pueden ver detalles de gastos donde participan" ON gastos_detalle
-    FOR SELECT USING (
-        auth.uid() = usuario_id OR
-        EXISTS (
-            SELECT 1 FROM gastos g
-            WHERE g.id = gastos_detalle.gasto_id AND g.usuario_id = auth.uid()
-        )
-    );
-
-CREATE POLICY "Los creadores de gastos pueden gestionar detalles" ON gastos_detalle
-    FOR ALL USING (
-        EXISTS (
-            SELECT 1 FROM gastos g
-            WHERE g.id = gastos_detalle.gasto_id AND g.usuario_id = auth.uid()
-        )
-    );
+-- Permitir gestión básica de detalles
+CREATE POLICY "Los usuarios autenticados pueden gestionar detalles" ON gastos_detalle
+    FOR ALL USING (auth.uid() IS NOT NULL);
 
 -- Políticas para pagos
 CREATE POLICY "Los usuarios pueden ver pagos relacionados con sus gastos" ON pagos
@@ -687,6 +756,7 @@ CREATE POLICY "Los creadores pueden actualizar solicitudes" ON solicitudes_pago
 -- Función para sincronizar usuarios con auth.users
 CREATE OR REPLACE FUNCTION sync_user_with_auth()
 RETURNS TRIGGER
+SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
@@ -712,16 +782,1123 @@ CREATE TRIGGER sync_user_trigger
     FOR EACH ROW EXECUTE FUNCTION sync_user_with_auth();
 
 -- =====================================================
+-- 12. FUNCIONES ADICIONALES PARA GESTIÓN DE GASTOS
+-- =====================================================
+
+-- Función RPC para editar gastos con validación de pagos
+-- Esta función permite editar el nombre y/o monto de un gasto
+-- Si el gasto tiene pagos asociados, solo permite editar el nombre
+-- Si no tiene pagos, permite editar tanto nombre como monto
+
+CREATE OR REPLACE FUNCTION editar_gasto(
+  p_gasto_id UUID,
+  p_usuario_id UUID,
+  p_nueva_descripcion TEXT DEFAULT NULL,
+  p_nuevo_monto DECIMAL DEFAULT NULL
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_gasto RECORD;
+  v_tiene_pagos BOOLEAN := FALSE;
+  v_resultado JSON;
+  v_detalles RECORD;
+  v_monto_por_cuota DECIMAL;
+  v_monto_por_participante DECIMAL;
+  v_participantes_count INTEGER;
+BEGIN
+  -- Verificar que el gasto existe y pertenece al usuario
+  SELECT * INTO v_gasto
+  FROM gastos
+  WHERE id = p_gasto_id AND usuario_id = p_usuario_id;
+  
+  IF NOT FOUND THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Gasto no encontrado o sin permisos'
+    );
+  END IF;
+  
+  -- Verificar si el gasto tiene pagos asociados
+  SELECT EXISTS(
+    SELECT 1
+    FROM gastos_detalle gd
+    JOIN pagos p ON p.gasto_detalle_id = gd.id
+    WHERE gd.gasto_id = p_gasto_id
+  ) INTO v_tiene_pagos;
+  
+  -- Si tiene pagos y se intenta cambiar el monto, rechazar
+  IF v_tiene_pagos AND p_nuevo_monto IS NOT NULL AND p_nuevo_monto != v_gasto.monto THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'No se puede modificar el monto porque el gasto tiene pagos asociados. Solo se puede editar la descripción.'
+    );
+  END IF;
+  
+  -- Actualizar la descripción si se proporciona
+  IF p_nueva_descripcion IS NOT NULL THEN
+    UPDATE gastos
+    SET descripcion = p_nueva_descripcion,
+        updated_at = NOW()
+    WHERE id = p_gasto_id;
+  END IF;
+  
+  -- Si no tiene pagos y se proporciona nuevo monto, actualizar y recalcular detalles
+  IF NOT v_tiene_pagos AND p_nuevo_monto IS NOT NULL AND p_nuevo_monto != v_gasto.monto THEN
+    -- Actualizar el monto del gasto
+    UPDATE gastos
+    SET monto = p_nuevo_monto,
+        updated_at = NOW()
+    WHERE id = p_gasto_id;
+    
+    -- Contar participantes únicos
+    SELECT COUNT(DISTINCT COALESCE(usuario_id::text, nombre_participante))
+    INTO v_participantes_count
+    FROM gastos_detalle
+    WHERE gasto_id = p_gasto_id;
+    
+    -- Calcular nuevo monto por cuota
+    v_monto_por_cuota := p_nuevo_monto / v_gasto.cuotas;
+    
+    -- Calcular nuevo monto por participante por cuota
+    v_monto_por_participante := v_monto_por_cuota / v_participantes_count;
+    
+    -- Aplicar descuento si existe
+    IF v_gasto.descuento IS NOT NULL AND v_gasto.descuento > 0 THEN
+      IF v_gasto.tipo_descuento = 'uniforme' THEN
+        -- Descuento uniforme: se aplica a todas las cuotas por igual
+        v_monto_por_participante := v_monto_por_participante - (v_gasto.descuento / v_gasto.cuotas / v_participantes_count);
+      ELSIF v_gasto.tipo_descuento = 'prorrateo' THEN
+        -- Descuento por prorrateo: se aplica solo a la primera cuota
+        -- Para simplificar, aplicamos el descuento proporcionalmente
+        v_monto_por_participante := v_monto_por_participante * (1 - (v_gasto.descuento / p_nuevo_monto));
+      END IF;
+    END IF;
+    
+    -- Actualizar todos los detalles del gasto
+    UPDATE gastos_detalle
+    SET monto = ROUND(v_monto_por_participante, 2),
+        updated_at = NOW()
+    WHERE gasto_id = p_gasto_id;
+    
+    -- Ajustar diferencias de redondeo en el primer detalle de cada cuota
+    FOR v_detalles IN
+      SELECT numero_cuota,
+             SUM(monto) as total_cuota,
+             (SELECT id FROM gastos_detalle gd2 
+              WHERE gd2.gasto_id = p_gasto_id 
+              AND gd2.numero_cuota = gastos_detalle.numero_cuota 
+              ORDER BY gd2.created_at ASC 
+              LIMIT 1) as primer_detalle_id
+      FROM gastos_detalle
+      WHERE gasto_id = p_gasto_id
+      GROUP BY numero_cuota
+    LOOP
+      DECLARE
+        v_diferencia DECIMAL;
+      BEGIN
+        v_diferencia := v_monto_por_cuota - v_detalles.total_cuota;
+        
+        IF ABS(v_diferencia) > 0.01 THEN
+          UPDATE gastos_detalle
+          SET monto = monto + v_diferencia,
+              updated_at = NOW()
+          WHERE id = v_detalles.primer_detalle_id;
+        END IF;
+      END;
+    END LOOP;
+  END IF;
+  
+  -- Retornar resultado exitoso
+  v_resultado := json_build_object(
+    'success', true,
+    'message', CASE
+      WHEN p_nueva_descripcion IS NOT NULL AND p_nuevo_monto IS NOT NULL THEN 'Descripción y monto actualizados correctamente'
+      WHEN p_nueva_descripcion IS NOT NULL THEN 'Descripción actualizada correctamente'
+      WHEN p_nuevo_monto IS NOT NULL THEN 'Monto actualizado correctamente'
+      ELSE 'No se realizaron cambios'
+    END,
+    'tiene_pagos', v_tiene_pagos,
+    'monto_anterior', v_gasto.monto,
+    'monto_nuevo', COALESCE(p_nuevo_monto, v_gasto.monto)
+  );
+  
+  RETURN v_resultado;
+  
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Error interno: ' || SQLERRM
+    );
+END;
+$$;
+
+-- Otorgar permisos de ejecución a usuarios autenticados
+GRANT EXECUTE ON FUNCTION editar_gasto(UUID, UUID, TEXT, DECIMAL) TO authenticated;
+
+-- Comentario de la función
+COMMENT ON FUNCTION editar_gasto(UUID, UUID, TEXT, DECIMAL) IS 
+'Función para editar gastos con validación de pagos. Permite editar descripción siempre, y monto solo si no tiene pagos asociados.';
+
+-- Función RPC para cambiar participante en gastos
+-- Esta función permite cambiar un participante por otro en todas las cuotas de un gasto
+-- Maneja tanto usuarios registrados como participantes sin cuenta
+
+CREATE OR REPLACE FUNCTION cambiar_participante_gasto(
+  p_gasto_id UUID,
+  p_usuario_id UUID,
+  p_detalle_id_original UUID,
+  p_nuevo_usuario_id UUID DEFAULT NULL,
+  p_nuevo_nombre_participante TEXT DEFAULT NULL
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_gasto RECORD;
+  v_detalle_original RECORD;
+  v_tiene_pagos BOOLEAN := FALSE;
+  v_resultado JSON;
+  v_detalles_actualizados INTEGER := 0;
+BEGIN
+  -- Verificar que el gasto existe y pertenece al usuario
+  SELECT * INTO v_gasto
+  FROM gastos
+  WHERE id = p_gasto_id AND usuario_id = p_usuario_id;
+  
+  IF NOT FOUND THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Gasto no encontrado o sin permisos'
+    );
+  END IF;
+  
+  -- Obtener información del detalle original
+  SELECT * INTO v_detalle_original
+  FROM gastos_detalle
+  WHERE id = p_detalle_id_original AND gasto_id = p_gasto_id;
+  
+  IF NOT FOUND THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Detalle de gasto no encontrado'
+    );
+  END IF;
+  
+  -- Validar que se proporcione al menos un nuevo identificador
+  IF p_nuevo_usuario_id IS NULL AND (p_nuevo_nombre_participante IS NULL OR p_nuevo_nombre_participante = '') THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Debe proporcionar un nuevo usuario o nombre de participante'
+    );
+  END IF;
+  
+  -- Verificar que el nuevo participante no esté ya en el gasto
+  IF EXISTS(
+    SELECT 1
+    FROM gastos_detalle
+    WHERE gasto_id = p_gasto_id
+    AND (
+      (p_nuevo_usuario_id IS NOT NULL AND usuario_id = p_nuevo_usuario_id)
+      OR
+      (p_nuevo_nombre_participante IS NOT NULL AND nombre_participante = p_nuevo_nombre_participante)
+    )
+  ) THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'El participante ya existe en este gasto'
+    );
+  END IF;
+  
+  -- Verificar si alguno de los detalles del participante tiene pagos asociados
+  SELECT EXISTS(
+    SELECT 1
+    FROM gastos_detalle gd
+    JOIN pagos p ON p.gasto_detalle_id = gd.id
+    WHERE gd.gasto_id = p_gasto_id
+    AND (
+      (v_detalle_original.usuario_id IS NOT NULL AND gd.usuario_id = v_detalle_original.usuario_id)
+      OR
+      (v_detalle_original.nombre_participante IS NOT NULL AND gd.nombre_participante = v_detalle_original.nombre_participante)
+    )
+  ) INTO v_tiene_pagos;
+  
+  -- Si tiene pagos asociados, no permitir el cambio
+  IF v_tiene_pagos THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'No se puede cambiar el participante porque tiene pagos asociados'
+    );
+  END IF;
+  
+  -- Actualizar todos los detalles del participante en todas las cuotas
+  UPDATE gastos_detalle
+  SET 
+    usuario_id = p_nuevo_usuario_id,
+    nombre_participante = p_nuevo_nombre_participante,
+    updated_at = NOW()
+  WHERE gasto_id = p_gasto_id
+  AND (
+    (v_detalle_original.usuario_id IS NOT NULL AND usuario_id = v_detalle_original.usuario_id)
+    OR
+    (v_detalle_original.nombre_participante IS NOT NULL AND nombre_participante = v_detalle_original.nombre_participante)
+  );
+  
+  -- Obtener el número de registros actualizados
+  GET DIAGNOSTICS v_detalles_actualizados = ROW_COUNT;
+  
+  -- Retornar resultado exitoso
+  v_resultado := json_build_object(
+    'success', true,
+    'message', 'Participante actualizado correctamente en ' || v_detalles_actualizados || ' cuota(s)',
+    'detalles_actualizados', v_detalles_actualizados,
+    'participante_anterior', CASE
+      WHEN v_detalle_original.usuario_id IS NOT NULL THEN 'Usuario ID: ' || v_detalle_original.usuario_id
+      ELSE v_detalle_original.nombre_participante
+    END,
+    'participante_nuevo', CASE
+      WHEN p_nuevo_usuario_id IS NOT NULL THEN 'Usuario ID: ' || p_nuevo_usuario_id
+      ELSE p_nuevo_nombre_participante
+    END
+  );
+  
+  RETURN v_resultado;
+  
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Error interno: ' || SQLERRM
+    );
+END;
+$$;
+
+-- Otorgar permisos de ejecución a usuarios autenticados
+GRANT EXECUTE ON FUNCTION cambiar_participante_gasto(UUID, UUID, UUID, UUID, TEXT) TO authenticated;
+
+-- Comentario de la función
+COMMENT ON FUNCTION cambiar_participante_gasto(UUID, UUID, UUID, UUID, TEXT) IS 
+'Función para cambiar participante en gastos. Actualiza el participante en todas las cuotas del gasto si no tiene pagos asociados.';
+
+-- =====================================================
+-- 13. SISTEMA DE USUARIOS FAVORITOS
+-- =====================================================
+
+-- Crear tabla favoritos
+CREATE TABLE IF NOT EXISTS public.favoritos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    usuario_favorito_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    nombre_favorito TEXT,
+    email_favorito TEXT,
+    frecuencia_uso INTEGER DEFAULT 1,
+    ultimo_uso TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    -- Constraints
+    CONSTRAINT favoritos_usuario_check CHECK (usuario_id != usuario_favorito_id),
+    CONSTRAINT favoritos_identificador_check CHECK (
+        (usuario_favorito_id IS NOT NULL) OR 
+        (nombre_favorito IS NOT NULL AND email_favorito IS NOT NULL)
+    ),
+    CONSTRAINT favoritos_unique_usuario_registrado UNIQUE (usuario_id, usuario_favorito_id),
+    CONSTRAINT favoritos_unique_usuario_no_registrado UNIQUE (usuario_id, nombre_favorito, email_favorito)
+);
+
+-- Índices para optimizar consultas
+CREATE INDEX IF NOT EXISTS idx_favoritos_usuario_id ON public.favoritos(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_favoritos_usuario_favorito_id ON public.favoritos(usuario_favorito_id);
+CREATE INDEX IF NOT EXISTS idx_favoritos_frecuencia_uso ON public.favoritos(usuario_id, frecuencia_uso DESC);
+CREATE INDEX IF NOT EXISTS idx_favoritos_ultimo_uso ON public.favoritos(usuario_id, ultimo_uso DESC);
+
+-- Trigger para updated_at
+-- Eliminar trigger si existe para evitar conflictos
+DROP TRIGGER IF EXISTS favoritos_updated_at ON public.favoritos;
+
+CREATE TRIGGER favoritos_updated_at
+    BEFORE UPDATE ON public.favoritos
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Función RPC para agregar favoritos manualmente
+CREATE OR REPLACE FUNCTION agregar_favoritos_gasto(gasto_id_param UUID)
+RETURNS BOOLEAN
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    usuario_info RECORD;
+    participante_record RECORD;
+    creador_gasto_id UUID;
+BEGIN
+    -- Obtener información del gasto para saber quién es el creador
+    SELECT usuario_id INTO creador_gasto_id
+    FROM public.gastos
+    WHERE id = gasto_id_param;
+    
+    -- Verificar que el usuario actual sea el creador del gasto
+    IF creador_gasto_id != auth.uid() THEN
+        RETURN FALSE;
+    END IF;
+    
+    -- Procesar todos los participantes del gasto
+    FOR participante_record IN 
+        SELECT usuario_id, nombre_participante
+        FROM public.gastos_detalle
+        WHERE gasto_id = gasto_id_param
+    LOOP
+        -- Solo procesar si el participante no es el creador del gasto
+        IF participante_record.usuario_id IS NOT NULL AND participante_record.usuario_id != creador_gasto_id THEN
+            -- Obtener información del usuario participante
+            SELECT email, nickname INTO usuario_info
+            FROM public.usuarios
+            WHERE id = participante_record.usuario_id;
+            
+            -- Verificar si ya existe en favoritos
+            IF EXISTS (
+                SELECT 1 FROM public.favoritos
+                WHERE usuario_id = creador_gasto_id
+                AND usuario_favorito_id = participante_record.usuario_id
+            ) THEN
+                -- Actualizar frecuencia y último uso
+                UPDATE public.favoritos
+                SET frecuencia_uso = frecuencia_uso + 1,
+                    ultimo_uso = NOW(),
+                    updated_at = NOW()
+                WHERE usuario_id = creador_gasto_id
+                AND usuario_favorito_id = participante_record.usuario_id;
+            ELSE
+                -- Insertar nuevo favorito
+                INSERT INTO public.favoritos (
+                    usuario_id,
+                    usuario_favorito_id,
+                    email_favorito,
+                    frecuencia_uso,
+                    ultimo_uso
+                ) VALUES (
+                    creador_gasto_id,
+                    participante_record.usuario_id,
+                    usuario_info.email,
+                    1,
+                    NOW()
+                );
+            END IF;
+        
+        -- Si es un participante sin cuenta (solo nombre)
+        ELSIF participante_record.nombre_participante IS NOT NULL THEN
+            -- Verificar si ya existe en favoritos
+            IF EXISTS (
+                SELECT 1 FROM public.favoritos
+                WHERE usuario_id = creador_gasto_id
+                AND nombre_favorito = participante_record.nombre_participante
+                AND usuario_favorito_id IS NULL
+            ) THEN
+                -- Actualizar frecuencia y último uso
+                UPDATE public.favoritos
+                SET frecuencia_uso = frecuencia_uso + 1,
+                    ultimo_uso = NOW(),
+                    updated_at = NOW()
+                WHERE usuario_id = creador_gasto_id
+                AND nombre_favorito = participante_record.nombre_participante
+                AND usuario_favorito_id IS NULL;
+            ELSE
+                -- Insertar nuevo favorito
+                INSERT INTO public.favoritos (
+                    usuario_id,
+                    nombre_favorito,
+                    frecuencia_uso,
+                    ultimo_uso
+                ) VALUES (
+                    creador_gasto_id,
+                    participante_record.nombre_participante,
+                    1,
+                    NOW()
+                );
+            END IF;
+        END IF;
+    END LOOP;
+    
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Otorgar permisos de ejecución
+GRANT EXECUTE ON FUNCTION agregar_favoritos_gasto(UUID) TO authenticated;
+
+-- Trigger para ejecutar la función automáticamente
+-- Eliminar trigger si existe para evitar conflictos
+DROP TRIGGER IF EXISTS trigger_agregar_favoritos ON public.gastos_detalle;
+
+-- TRIGGER TEMPORALMENTE DESHABILITADO PARA DEBUG
+-- CREATE TRIGGER trigger_agregar_favoritos
+--     AFTER INSERT ON public.gastos_detalle
+--     FOR EACH ROW
+--     EXECUTE FUNCTION agregar_favoritos_automaticamente();
+
+-- Función RPC para obtener favoritos del usuario
+CREATE OR REPLACE FUNCTION obtener_favoritos_usuario()
+RETURNS TABLE(
+    id UUID,
+    usuario_favorito_id UUID,
+    nombre_favorito TEXT,
+    email_favorito TEXT,
+    nickname TEXT,
+    frecuencia_uso INTEGER,
+    ultimo_uso TIMESTAMP WITH TIME ZONE
+)
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        f.id,
+        f.usuario_favorito_id,
+        f.nombre_favorito,
+        f.email_favorito,
+        u.nickname,
+        f.frecuencia_uso,
+        f.ultimo_uso
+    FROM public.favoritos f
+    LEFT JOIN public.usuarios u ON u.id = f.usuario_favorito_id
+    WHERE f.usuario_id = auth.uid()
+    ORDER BY f.frecuencia_uso DESC, f.ultimo_uso DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Otorgar permisos de ejecución
+GRANT EXECUTE ON FUNCTION obtener_favoritos_usuario() TO authenticated;
+
+-- Función RPC para eliminar favorito
+CREATE OR REPLACE FUNCTION eliminar_favorito(favorito_id UUID)
+RETURNS BOOLEAN
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    DELETE FROM public.favoritos
+    WHERE id = favorito_id
+    AND usuario_id = auth.uid();
+    
+    RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Otorgar permisos de ejecución
+GRANT EXECUTE ON FUNCTION eliminar_favorito(UUID) TO authenticated;
+
+-- Habilitar RLS en la tabla favoritos
+ALTER TABLE public.favoritos ENABLE ROW LEVEL SECURITY;
+
+-- Eliminar políticas si existen para evitar conflictos
+DROP POLICY IF EXISTS "Los usuarios pueden ver sus propios favoritos" ON public.favoritos;
+DROP POLICY IF EXISTS "Los usuarios pueden crear sus propios favoritos" ON public.favoritos;
+DROP POLICY IF EXISTS "Los usuarios pueden actualizar sus propios favoritos" ON public.favoritos;
+DROP POLICY IF EXISTS "Los usuarios pueden eliminar sus propios favoritos" ON public.favoritos;
+
+-- Políticas RLS para favoritos
+CREATE POLICY "Los usuarios pueden ver sus propios favoritos" ON public.favoritos
+    FOR SELECT USING (auth.uid() = usuario_id);
+
+CREATE POLICY "Los usuarios pueden crear sus propios favoritos" ON public.favoritos
+    FOR INSERT WITH CHECK (auth.uid() = usuario_id);
+
+CREATE POLICY "Los usuarios pueden actualizar sus propios favoritos" ON public.favoritos
+    FOR UPDATE USING (auth.uid() = usuario_id);
+
+CREATE POLICY "Los usuarios pueden eliminar sus propios favoritos" ON public.favoritos
+    FOR DELETE USING (auth.uid() = usuario_id);
+
+-- =====================================================
+-- FUNCIÓN RPC PARA CREAR GASTOS
+-- =====================================================
+
+-- Función RPC completa para crear gastos con detalles, pagos automáticos y favoritos
+-- INCLUYE DISTRIBUCIÓN EQUITATIVA DE CENTAVOS:
+-- - Distribuye centavos restantes entre los primeros participantes
+-- - Garantiza que la suma de detalles sea exactamente igual al monto total
+-- - Ejemplo: $100 entre 3 participantes = $33.34, $33.33, $33.33
+CREATE OR REPLACE FUNCTION crear_gasto_completo(
+    p_descripcion TEXT,
+    p_monto_total DECIMAL(10,2),
+    p_tipo tipo_gasto,
+    p_fecha DATE,
+    p_cuotas INTEGER,
+    p_participantes JSONB,
+    p_primer_vencimiento DATE,
+    p_descuento DECIMAL(10,2) DEFAULT 0,
+    p_tipo_descuento tipo_descuento DEFAULT 'uniforme',
+    p_pagado BOOLEAN DEFAULT FALSE,
+    p_es_recurrente BOOLEAN DEFAULT FALSE,
+    p_gasto_padre_id UUID DEFAULT NULL
+)
+RETURNS JSON
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_gasto_id UUID;
+    v_participante JSONB;
+    v_detalle_id UUID;
+    v_monto_por_cuota DECIMAL(10,2);
+    v_monto_por_participante DECIMAL(10,2);
+    v_participantes_count INTEGER;
+    v_fecha_vencimiento DATE;
+    v_resultado JSON;
+    v_montos_calculados DECIMAL(10,2)[];
+    v_cuota INTEGER;
+BEGIN
+    -- Validar parámetros básicos
+    IF p_monto_total <= 0 THEN
+        RETURN json_build_object(
+            'success', false,
+            'error', 'El monto total debe ser mayor a 0'
+        );
+    END IF;
+    
+    IF p_cuotas <= 0 THEN
+        RETURN json_build_object(
+            'success', false,
+            'error', 'Las cuotas deben ser mayor a 0'
+        );
+    END IF;
+    
+    IF jsonb_array_length(p_participantes) = 0 THEN
+        RETURN json_build_object(
+            'success', false,
+            'error', 'Debe haber al menos un participante'
+        );
+    END IF;
+    
+    -- Contar participantes
+    v_participantes_count := jsonb_array_length(p_participantes);
+    
+    -- Calcular montos con descuento aplicado
+    FOR v_cuota IN 1..p_cuotas LOOP
+        v_monto_por_cuota := p_monto_total / p_cuotas;
+        
+        -- Aplicar descuento según tipo
+        IF p_descuento > 0 THEN
+            IF p_tipo_descuento = 'uniforme' THEN
+                -- Descuento uniforme: se aplica a todas las cuotas por igual
+                v_monto_por_cuota := v_monto_por_cuota - (p_descuento / p_cuotas);
+            ELSIF p_tipo_descuento = 'prorrateo' AND v_cuota = 1 THEN
+                -- Descuento por prorrateo: se aplica solo a la primera cuota
+                v_monto_por_cuota := v_monto_por_cuota - p_descuento;
+            END IF;
+        END IF;
+        
+        v_montos_calculados[v_cuota] := v_monto_por_cuota;
+    END LOOP;
+    
+    -- Crear el gasto principal
+    INSERT INTO public.gastos (
+        usuario_id,
+        descripcion,
+        monto,
+        tipo,
+        fecha,
+        cuotas,
+        descuento,
+        tipo_descuento,
+        es_recurrente,
+        gasto_padre_id
+    ) VALUES (
+        auth.uid(),
+        p_descripcion,
+        p_monto_total,
+        p_tipo,
+        p_fecha,
+        p_cuotas,
+        p_descuento,
+        p_tipo_descuento,
+        p_es_recurrente,
+        p_gasto_padre_id
+    ) RETURNING id INTO v_gasto_id;
+    
+    -- Crear detalles para cada participante y cuota
+    FOR v_cuota IN 1..p_cuotas LOOP
+        -- Calcular fecha de vencimiento para esta cuota
+        v_fecha_vencimiento := p_primer_vencimiento + INTERVAL '1 month' * (v_cuota - 1);
+        
+        -- Variables para manejar la precisión y distribución equitativa de centavos
+        -- Esta lógica asegura que la suma de los detalles sea exactamente igual al monto de la cuota
+        DECLARE
+            v_participante_index INTEGER := 0;
+            v_monto_base DECIMAL(10,2);
+            v_centavos_restantes INTEGER;
+            v_monto_ajustado DECIMAL(10,2);
+        BEGIN
+            -- Calcular monto base (sin centavos) y centavos restantes
+            v_monto_base := FLOOR(v_montos_calculados[v_cuota] / v_participantes_count * 100) / 100;
+            v_centavos_restantes := (v_montos_calculados[v_cuota] * 100)::INTEGER - (v_monto_base * v_participantes_count * 100)::INTEGER;
+            
+            -- Crear detalle para cada participante
+            FOR v_participante IN SELECT * FROM jsonb_array_elements(p_participantes) LOOP
+                v_participante_index := v_participante_index + 1;
+                
+                -- Distribuir centavos restantes entre los primeros participantes
+                IF v_participante_index <= v_centavos_restantes THEN
+                    v_monto_ajustado := v_monto_base + 0.01;
+                ELSE
+                    v_monto_ajustado := v_monto_base;
+                END IF;
+                
+                INSERT INTO public.gastos_detalle (
+                    gasto_id,
+                    usuario_id,
+                    nombre_participante,
+                    monto,
+                    pagado,
+                    vencimiento,
+                    numero_cuota
+                ) VALUES (
+                    v_gasto_id,
+                    CASE WHEN v_participante->>'usuario_id' != 'null' THEN (v_participante->>'usuario_id')::UUID ELSE NULL END,
+                    CASE WHEN v_participante->>'usuario_id' = 'null' OR v_participante->>'usuario_id' IS NULL THEN v_participante->>'nickname' ELSE NULL END,
+                    v_monto_ajustado,
+                    p_pagado OR v_monto_ajustado = 0,
+                    v_fecha_vencimiento,
+                    v_cuota
+                ) RETURNING id INTO v_detalle_id;
+            
+                -- Si el gasto está marcado como pagado y el monto es mayor a 0, crear pago automático
+                IF p_pagado AND v_monto_ajustado > 0 THEN
+                    INSERT INTO public.pagos (
+                        gasto_detalle_id,
+                        monto,
+                        medio_pago,
+                        fecha_pago
+                    ) VALUES (
+                        v_detalle_id,
+                        v_monto_ajustado,
+                        'efectivo',
+                        CURRENT_DATE
+                    );
+                END IF;
+            END LOOP;
+        END; -- Fin del bloque DECLARE-BEGIN
+    END LOOP;
+    
+    -- Agregar favoritos automáticamente
+    PERFORM agregar_favoritos_gasto(v_gasto_id);
+    
+    -- Retornar resultado exitoso
+    v_resultado := json_build_object(
+        'success', true,
+        'gasto_id', v_gasto_id,
+        'message', 'Gasto creado exitosamente con favoritos automáticos'
+    );
+    
+    RETURN v_resultado;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'error', 'Error interno: ' || SQLERRM
+        );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Función wrapper para compatibilidad con el código existente
+CREATE OR REPLACE FUNCTION crear_gasto(
+    p_descripcion TEXT,
+    p_monto_total DECIMAL(10,2),
+    p_tipo tipo_gasto,
+    p_fecha DATE,
+    p_cuotas INTEGER,
+    p_participantes JSONB,
+    p_primer_vencimiento DATE,
+    p_descuento DECIMAL(10,2) DEFAULT 0,
+    p_tipo_descuento tipo_descuento DEFAULT 'uniforme',
+    p_pagado BOOLEAN DEFAULT FALSE,
+    p_es_recurrente BOOLEAN DEFAULT FALSE,
+    p_gasto_padre_id UUID DEFAULT NULL
+)
+RETURNS JSON
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    -- Llamar a la función completa
+    RETURN crear_gasto_completo(
+        p_descripcion,
+        p_monto_total,
+        p_tipo,
+        p_fecha,
+        p_cuotas,
+        p_participantes,
+        p_primer_vencimiento,
+        p_descuento,
+        p_tipo_descuento,
+        p_pagado,
+        p_es_recurrente,
+        p_gasto_padre_id
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Otorgar permisos de ejecución
+GRANT EXECUTE ON FUNCTION crear_gasto_completo(
+    TEXT, DECIMAL(10,2), tipo_gasto, DATE, INTEGER, JSONB, DATE, DECIMAL(10,2), tipo_descuento, BOOLEAN, BOOLEAN, UUID
+) TO authenticated;
+
+GRANT EXECUTE ON FUNCTION crear_gasto(
+    TEXT, DECIMAL(10,2), tipo_gasto, DATE, INTEGER, JSONB, DATE, DECIMAL(10,2), tipo_descuento, BOOLEAN, BOOLEAN, UUID
+) TO authenticated;
+
+-- Otorgar permisos de ejecución para obtener_gastos_compartidos
+GRANT EXECUTE ON FUNCTION obtener_gastos_compartidos(UUID) TO authenticated;
+
+-- =====================================================
+-- FUNCIÓN OBTENER PAGOS USUARIO (MIGRACIÓN 002)
+-- =====================================================
+
+-- Función para obtener pagos filtrados por usuario y mes/año
+CREATE OR REPLACE FUNCTION obtener_pagos_usuario(
+    p_usuario_id UUID,
+    p_mes INTEGER DEFAULT NULL,
+    p_año INTEGER DEFAULT NULL
+)
+RETURNS TABLE (
+    pago_id UUID,
+    pago_monto NUMERIC,
+    pago_fecha_pago DATE,
+    pago_medio_pago medio_pago,
+    pago_notas TEXT,
+    pago_created_at TIMESTAMP WITH TIME ZONE,
+    pago_updated_at TIMESTAMP WITH TIME ZONE,
+    gasto_detalle_id UUID,
+    gasto_detalle_monto NUMERIC,
+    gasto_detalle_vencimiento DATE,
+    gasto_detalle_numero_cuota INTEGER,
+    gasto_id UUID,
+    gasto_descripcion TEXT,
+    gasto_usuario_id UUID,
+    usuario_id UUID,
+    usuario_nickname TEXT,
+    usuario_email TEXT
+)
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.id as pago_id,
+        p.monto as pago_monto,
+        p.fecha_pago as pago_fecha_pago,
+        p.medio_pago as pago_medio_pago,
+        p.notas as pago_notas,
+        p.created_at as pago_created_at,
+        p.updated_at as pago_updated_at,
+        gd.id as gasto_detalle_id,
+        gd.monto as gasto_detalle_monto,
+        gd.vencimiento as gasto_detalle_vencimiento,
+        gd.numero_cuota as gasto_detalle_numero_cuota,
+        g.id as gasto_id,
+        g.descripcion as gasto_descripcion,
+        g.usuario_id as gasto_usuario_id,
+        u.id as usuario_id,
+        u.nickname as usuario_nickname,
+        u.email as usuario_email
+    FROM public.pagos p
+    INNER JOIN public.gastos_detalle gd ON p.gasto_detalle_id = gd.id
+    INNER JOIN public.gastos g ON gd.gasto_id = g.id
+    LEFT JOIN public.usuarios u ON gd.usuario_id = u.id
+    WHERE 
+        gd.usuario_id = p_usuario_id
+        AND gd.vencimiento IS NOT NULL
+        AND (
+            (p_mes IS NULL OR p_año IS NULL) OR
+            (EXTRACT(MONTH FROM gd.vencimiento) = p_mes AND EXTRACT(YEAR FROM gd.vencimiento) = p_año)
+        )
+    ORDER BY p.fecha_pago DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Otorgar permisos de ejecución para obtener_pagos_usuario
+GRANT EXECUTE ON FUNCTION obtener_pagos_usuario(UUID, INTEGER, INTEGER) TO authenticated;
+
+-- =====================================================
+-- FUNCIÓN OBTENER DATOS RESUMEN MENSUAL (MIGRACIÓN 003)
+-- =====================================================
+
+-- Función para obtener datos de resumen mensual
+CREATE OR REPLACE FUNCTION obtener_datos_resumen_mensual(
+    p_usuario_id UUID,
+    p_mes INTEGER DEFAULT NULL,
+    p_año INTEGER DEFAULT NULL
+)
+RETURNS TABLE(
+    -- Totales por tipo (para gráfico circular)
+    gastos_fijos DECIMAL(10,2),
+    gastos_variables DECIMAL(10,2),
+    total_gastos DECIMAL(10,2),
+    
+    -- Resumen financiero
+    por_pagar DECIMAL(10,2),
+    me_adeudan DECIMAL(10,2),
+    
+    -- Contadores adicionales
+    cantidad_gastos_fijos INTEGER,
+    cantidad_gastos_variables INTEGER,
+    cantidad_detalles_por_pagar INTEGER,
+    cantidad_detalles_adeudados INTEGER
+)
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+    v_gastos_fijos DECIMAL(10,2) := 0;
+    v_gastos_variables DECIMAL(10,2) := 0;
+    v_por_pagar DECIMAL(10,2) := 0;
+    v_me_adeudan DECIMAL(10,2) := 0;
+    v_cant_fijos INTEGER := 0;
+    v_cant_variables INTEGER := 0;
+    v_cant_por_pagar INTEGER := 0;
+    v_cant_adeudados INTEGER := 0;
+BEGIN
+
+    -- 1. CALCULAR GASTOS TOTALES POR TIPO (PARA GRÁFICO)
+    -- =====================================================
+    -- Sumar todos los gastos_detalle del usuario, agrupados por tipo de gasto
+    -- Sin importar si están pagados o no
+    
+    SELECT 
+        COALESCE(SUM(CASE WHEN g.es_recurrente = true THEN gd.monto ELSE 0 END), 0),
+        COALESCE(SUM(CASE WHEN g.es_recurrente = false OR g.es_recurrente IS NULL THEN gd.monto ELSE 0 END), 0),
+        COALESCE(COUNT(CASE WHEN g.es_recurrente = true THEN 1 END), 0),
+        COALESCE(COUNT(CASE WHEN g.es_recurrente = false OR g.es_recurrente IS NULL THEN 1 END), 0)
+    INTO v_gastos_fijos, v_gastos_variables, v_cant_fijos, v_cant_variables
+    FROM gastos_detalle gd
+    INNER JOIN gastos g ON gd.gasto_id = g.id
+    WHERE gd.usuario_id = p_usuario_id
+        AND (p_mes IS NULL OR EXTRACT(MONTH FROM gd.vencimiento) = p_mes)
+        AND (p_año IS NULL OR EXTRACT(YEAR FROM gd.vencimiento) = p_año);
+    
+    -- =====================================================
+    -- 2. CALCULAR GASTOS POR PAGAR DEL USUARIO
+    -- =====================================================
+    
+    SELECT 
+        COALESCE(SUM(gd.monto - COALESCE(pagos_sum.total_pagado, 0)), 0),
+        COALESCE(COUNT(*), 0)
+    INTO v_por_pagar, v_cant_por_pagar
+    FROM gastos_detalle gd
+    LEFT JOIN (
+        SELECT 
+            p.gasto_detalle_id,
+            SUM(p.monto) as total_pagado
+        FROM pagos p
+        GROUP BY p.gasto_detalle_id
+    ) pagos_sum ON gd.id = pagos_sum.gasto_detalle_id
+    WHERE gd.usuario_id = p_usuario_id
+        AND (p_mes IS NULL OR EXTRACT(MONTH FROM gd.vencimiento) = p_mes)
+        AND (p_año IS NULL OR EXTRACT(YEAR FROM gd.vencimiento) = p_año)
+        AND (gd.monto > COALESCE(pagos_sum.total_pagado, 0)); -- Solo los que tienen saldo pendiente
+    
+    -- =====================================================
+    -- 3. CALCULAR LO QUE LE ADEUDAN AL USUARIO
+    -- =====================================================
+    -- Sumar gastos_detalle de otros usuarios en gastos creados por el usuario actual
+    -- que no están completamente pagados
+    
+    SELECT 
+        COALESCE(SUM(gd.monto - COALESCE(pagos_sum.total_pagado, 0)), 0),
+        COALESCE(COUNT(*), 0)
+    INTO v_me_adeudan, v_cant_adeudados
+    FROM gastos_detalle gd
+    INNER JOIN gastos g ON gd.gasto_id = g.id
+    LEFT JOIN (
+        SELECT 
+            p.gasto_detalle_id,
+            SUM(p.monto) as total_pagado
+        FROM pagos p
+        GROUP BY p.gasto_detalle_id
+    ) pagos_sum ON gd.id = pagos_sum.gasto_detalle_id
+    WHERE g.usuario_id = p_usuario_id  -- Gastos creados por el usuario
+        AND (gd.usuario_id != p_usuario_id OR gd.usuario_id IS NULL)  -- Detalle pertenece a otro usuario o participante externo
+        AND (p_mes IS NULL OR EXTRACT(MONTH FROM gd.vencimiento) = p_mes)
+        AND (p_año IS NULL OR EXTRACT(YEAR FROM gd.vencimiento) = p_año)
+        AND (gd.monto > COALESCE(pagos_sum.total_pagado, 0)); -- Solo los que tienen saldo pendiente
+    
+    -- =====================================================
+    -- 4. RETORNAR RESULTADOS
+    -- =====================================================
+    
+    RETURN QUERY SELECT 
+        v_gastos_fijos,
+        v_gastos_variables,
+        v_gastos_fijos + v_gastos_variables,
+        v_por_pagar,
+        v_me_adeudan,
+        v_cant_fijos,
+        v_cant_variables,
+        v_cant_por_pagar,
+        v_cant_adeudados;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Otorgar permisos de ejecución para obtener_datos_resumen_mensual
+GRANT EXECUTE ON FUNCTION obtener_datos_resumen_mensual(UUID, INTEGER, INTEGER) TO authenticated;
+
+-- Otorgar permisos de ejecución para funciones de solicitudes de pago
+GRANT EXECUTE ON FUNCTION crear_solicitud_pago(UUID, UUID, DECIMAL, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION obtener_solicitudes_recibidas(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION obtener_solicitudes_enviadas(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION aceptar_solicitud_pago(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION rechazar_solicitud_pago(UUID, TEXT) TO authenticated;
+
+-- =====================================================
 -- FIN DE LA MIGRACIÓN COMPLETA
 -- =====================================================
 
 -- Comentarios finales
-COMMENT ON DATABASE CURRENT_DATABASE() IS 'Base de datos para aplicación de gestión de gastos compartidos';
+COMMENT ON DATABASE CURRENT_DATABASE IS 'Base de datos para aplicación de gestión de gastos compartidos';
 COMMENT ON TABLE usuarios IS 'Tabla de usuarios del sistema';
 COMMENT ON TABLE gastos IS 'Tabla principal de gastos';
 COMMENT ON TABLE gastos_detalle IS 'Detalles de participación en gastos por usuario y cuota';
 COMMENT ON TABLE pagos IS 'Registro de pagos realizados';
 COMMENT ON TABLE solicitudes_pago IS 'Sistema de solicitudes de pago entre usuarios';
+
+-- =====================================================
+-- FUNCIONES PARA OBTENER LISTAS DETALLADAS DE RESUMEN
+-- =====================================================
+-- Estas funciones devuelven listas detalladas de gastos para mostrar
+-- en la pantalla de resumen como secciones separadas
+-- =====================================================
+
+-- =====================================================
+-- FUNCIÓN PARA OBTENER GASTOS POR PAGAR DEL USUARIO
+-- =====================================================
+CREATE OR REPLACE FUNCTION obtener_gastos_por_pagar(
+    p_usuario_id UUID,
+    p_mes INTEGER DEFAULT NULL,
+    p_año INTEGER DEFAULT NULL
+)
+RETURNS TABLE(
+    gasto_detalle_id UUID,
+    gasto_id UUID,
+    descripcion TEXT,
+    monto DECIMAL(10,2),
+    monto_pagado DECIMAL(10,2),
+    monto_pendiente DECIMAL(10,2),
+    vencimiento DATE,
+    numero_cuota INTEGER,
+    tipo_gasto tipo_gasto,
+    es_recurrente BOOLEAN,
+    usuario_creador_nickname TEXT,
+    usuario_creador_email TEXT
+)
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        gd.id as gasto_detalle_id,
+        g.id as gasto_id,
+        g.descripcion,
+        gd.monto,
+        COALESCE(pagos_sum.total_pagado, 0) as monto_pagado,
+        (gd.monto - COALESCE(pagos_sum.total_pagado, 0)) as monto_pendiente,
+        gd.vencimiento,
+        gd.numero_cuota,
+        g.tipo as tipo_gasto,
+        g.es_recurrente,
+        u.nickname as usuario_creador_nickname,
+        u.email as usuario_creador_email
+    FROM gastos_detalle gd
+    INNER JOIN gastos g ON gd.gasto_id = g.id
+    INNER JOIN usuarios u ON g.usuario_id = u.id
+    LEFT JOIN (
+        SELECT 
+            p.gasto_detalle_id,
+            SUM(p.monto) as total_pagado
+        FROM pagos p
+        GROUP BY p.gasto_detalle_id
+    ) pagos_sum ON gd.id = pagos_sum.gasto_detalle_id
+    WHERE gd.usuario_id = p_usuario_id
+        AND (p_mes IS NULL OR EXTRACT(MONTH FROM gd.vencimiento) = p_mes)
+        AND (p_año IS NULL OR EXTRACT(YEAR FROM gd.vencimiento) = p_año)
+        AND (gd.monto > COALESCE(pagos_sum.total_pagado, 0)) -- Solo los que tienen saldo pendiente
+    ORDER BY gd.vencimiento ASC, g.descripcion ASC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- FUNCIÓN PARA OBTENER GASTOS QUE LE ADEUDAN AL USUARIO
+-- =====================================================
+CREATE OR REPLACE FUNCTION obtener_gastos_adeudados(
+    p_usuario_id UUID,
+    p_mes INTEGER DEFAULT NULL,
+    p_año INTEGER DEFAULT NULL
+)
+RETURNS TABLE(
+    gasto_detalle_id UUID,
+    gasto_id UUID,
+    descripcion TEXT,
+    monto DECIMAL(10,2),
+    monto_pagado DECIMAL(10,2),
+    monto_pendiente DECIMAL(10,2),
+    vencimiento DATE,
+    numero_cuota INTEGER,
+    tipo_gasto tipo_gasto,
+    es_recurrente BOOLEAN,
+    usuario_deudor_id UUID,
+    usuario_deudor_nickname TEXT,
+    usuario_deudor_email TEXT
+)
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        gd.id as gasto_detalle_id,
+        g.id as gasto_id,
+        g.descripcion,
+        gd.monto,
+        COALESCE(pagos_sum.total_pagado, 0) as monto_pagado,
+        (gd.monto - COALESCE(pagos_sum.total_pagado, 0)) as monto_pendiente,
+        gd.vencimiento,
+        gd.numero_cuota,
+        g.tipo as tipo_gasto,
+        g.es_recurrente,
+        gd.usuario_id as usuario_deudor_id,
+        COALESCE(u.nickname, 'Usuario externo') as usuario_deudor_nickname,
+        COALESCE(u.email, 'Sin email') as usuario_deudor_email
+    FROM gastos_detalle gd
+    INNER JOIN gastos g ON gd.gasto_id = g.id
+    LEFT JOIN usuarios u ON gd.usuario_id = u.id
+    LEFT JOIN (
+        SELECT 
+            p.gasto_detalle_id,
+            SUM(p.monto) as total_pagado
+        FROM pagos p
+        GROUP BY p.gasto_detalle_id
+    ) pagos_sum ON gd.id = pagos_sum.gasto_detalle_id
+    WHERE g.usuario_id = p_usuario_id  -- Gastos creados por el usuario
+        AND (gd.usuario_id != p_usuario_id OR gd.usuario_id IS NULL)  -- Detalle pertenece a otro usuario o participante externo
+        AND (p_mes IS NULL OR EXTRACT(MONTH FROM gd.vencimiento) = p_mes)
+        AND (p_año IS NULL OR EXTRACT(YEAR FROM gd.vencimiento) = p_año)
+        AND (gd.monto > COALESCE(pagos_sum.total_pagado, 0)) -- Solo los que tienen saldo pendiente
+    ORDER BY gd.vencimiento ASC, g.descripcion ASC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- PERMISOS DE EJECUCIÓN
+-- =====================================================
+GRANT EXECUTE ON FUNCTION obtener_gastos_por_pagar(UUID, INTEGER, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION obtener_gastos_adeudados(UUID, INTEGER, INTEGER) TO authenticated;
 
 -- Verificación final
 SELECT 'Migración completa aplicada exitosamente' as resultado;

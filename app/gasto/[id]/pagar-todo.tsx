@@ -20,7 +20,7 @@ import {
 } from 'react-native-paper'
 import { useLocalSearchParams, router } from 'expo-router'
 import { supabase, Gasto, GastoDetalle, pagosService } from '../../../lib/supabase'
-import { showAlert, showSuccessToast } from '../../../lib/alerts'
+import { showAlert } from '../../../lib/alerts'
 
 type MedioPago = 'efectivo' | 'transferencia'
 
@@ -156,7 +156,7 @@ export default function PagarTodoScreen() {
 
       await Promise.all(pagosPromises)
 
-      showSuccessToast(`Se registraron ${detallesPendientes.length} pagos correctamente`)
+      showAlert('Éxito', `Se registraron ${detallesPendientes.length} pagos correctamente`)
       // Navegar de vuelta y forzar recarga de la vista de detalle
       router.replace(`/gasto/${gastoId}-cuota-${numeroCuota}`)
     } catch (error: any) {

@@ -9,7 +9,7 @@ import { Provider as PaperProvider } from 'react-native-paper'
 import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
 import LoginScreen from '../components/LoginScreen'
-import Toast from 'react-native-toast-message'
+
 import { MonthProvider } from '../contexts/MonthContext'
 
 export default function RootLayout() {
@@ -38,7 +38,6 @@ export default function RootLayout() {
       <PaperProvider>
         <StatusBar style="dark" />
         <LoginScreen />
-        <Toast />
       </PaperProvider>
     )
   }
@@ -51,7 +50,6 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="nuevo-gasto/index" />
         </Stack>
-        <Toast />
       </MonthProvider>
     </PaperProvider>
   )

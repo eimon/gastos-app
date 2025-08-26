@@ -20,7 +20,7 @@ import {
 } from 'react-native-paper'
 import { useLocalSearchParams, router } from 'expo-router'
 import { supabase, Gasto, GastoDetalle, gastosService, pagosService } from '../../../lib/supabase'
-import { showAlert, showSuccessToast } from '../../../lib/alerts'
+import { showAlert } from '../../../lib/alerts'
 
 type MedioPago = 'efectivo' | 'transferencia'
 
@@ -174,14 +174,14 @@ export default function PagarRecurrenteScreen() {
       if (gastoBase?.es_recurrente && numeroCuota === gastoBase.cuotas && modificarMonto) {
         try {
           await gastosService.generarGastoRecurrente(gastoId, gastoBase.usuario_id, montoFinal)
-          showSuccessToast(`Gasto recurrente generado para el próximo mes con monto ${formatearMonto(montoFinal)}`)
+          showAlert('Éxito', `Gasto recurrente generado para el próximo mes con monto ${formatearMonto(montoFinal)}`)
         } catch (recurrenteError) {
           console.error('Error generando gasto recurrente:', recurrenteError)
           showAlert('Advertencia', 'Los pagos se registraron correctamente, pero hubo un error generando el gasto recurrente')
         }
       }
 
-      showSuccessToast(`Se registraron ${detallesPendientes.length} pagos correctamente`)
+      showAlert('Éxito', `Se registraron ${detallesPendientes.length} pagos correctamente`)
       // Navegar de vuelta y forzar recarga de la vista de detalle
       router.replace(`/gasto/${gastoId}-cuota-${numeroCuota}`)
     } catch (error: any) {

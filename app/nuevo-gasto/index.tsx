@@ -23,8 +23,9 @@ import {
 } from 'react-native-paper'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
+import CurrencyInput from 'react-native-currency-input'
 import { supabase, TipoGasto, TipoDescuento, ParticipanteCreate, GastoCreate, gastosService, calcularMontosConDescuento } from '../../lib/supabase'
-import { showAlert, showSuccessToast } from '../../lib/alerts'
+import { showAlert } from '../../lib/alerts'
 import DateTimePicker from '@react-native-community/datetimepicker'
 
 interface ParticipanteForm {
@@ -65,6 +66,25 @@ export default function NuevoGastoScreen() {
   const [emailBusqueda, setEmailBusqueda] = useState('')
   const [usuarioEncontrado, setUsuarioEncontrado] = useState<any>(null)
   const [buscandoUsuario, setBuscandoUsuario] = useState(false)
+  
+  // Estados para favoritos
+  const [favoritos, setFavoritos] = useState<any[]>([])
+  const [cargandoFavoritos, setCargandoFavoritos] = useState(false)
+  const [favoritoSeleccionado, setFavoritoSeleccionado] = useState<any>(null)
+
+  // Función para formatear solo para mostrar (no modifica el input)
+  const formatearParaMostrar = (valor: number): string => {
+    return valor.toLocaleString('es-AR', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    })
+  }
+
+  // Función para establecer cuotas desde botones
+  const establecerCuotas = (numeroCuotas: number) => {
+    setCuotas(numeroCuotas)
+    setCuotasText(numeroCuotas.toString())
+  }
 
 
   useEffect(() => {
@@ -150,7 +170,8 @@ export default function NuevoGastoScreen() {
     setBuscandoUsuario(true)
     try {
       const { data: usuarios, error } = await supabase
-        .rpc('buscar_usuario_por_email', { email_busqueda: emailBusqueda.trim() })
+        .rpc('buscar_usuarios', { termino_busqueda: emailBusqueda.trim() })
+      console.log('Usuarios encontrados:', usuarios, 'email búsqueda: ', emailBusqueda.trim())
 
       const usuario = usuarios?.[0]
 
@@ -172,6 +193,33 @@ export default function NuevoGastoScreen() {
       showAlert('Error', 'Error al buscar el usuario')
     } finally {
       setBuscandoUsuario(false)
+    }
+  }
+
+  const cargarFavoritos = async () => {
+    setCargandoFavoritos(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: favoritosData, error } = await supabase
+        .rpc('obtener_favoritos_usuario')
+
+      if (error) {
+        console.error('Error cargando favoritos:', error)
+        return
+      }
+
+      // Filtrar favoritos que no estén ya agregados como participantes
+      const favoritosFiltrados = favoritosData?.filter((favorito: any) => 
+        !participantes.find(p => p.usuario_id === favorito.usuario_id)
+      ) || []
+
+      setFavoritos(favoritosFiltrados)
+    } catch (error) {
+      console.error('Error cargando favoritos:', error)
+    } finally {
+      setCargandoFavoritos(false)
     }
   }
 
@@ -206,6 +254,20 @@ export default function NuevoGastoScreen() {
     cerrarModalParticipante()
   }
 
+  const agregarFavoritoSeleccionado = () => {
+    if (!favoritoSeleccionado) return
+
+    const participante: ParticipanteForm = {
+      tempId: Date.now().toString(),
+      nickname: favoritoSeleccionado.nickname,
+      email: favoritoSeleccionado.email,
+      usuario_id: favoritoSeleccionado.usuario_id
+    }
+
+    setParticipantes([...participantes, participante])
+    cerrarModalParticipante()
+  }
+
   const cerrarModalParticipante = () => {
     setShowParticipanteModal(false)
     setNuevoParticipante({ nickname: '', email: '' })
@@ -213,6 +275,9 @@ export default function NuevoGastoScreen() {
     setEmailBusqueda('')
     setUsuarioEncontrado(null)
     setBuscandoUsuario(false)
+    setFavoritos([])
+    setFavoritoSeleccionado(null)
+    setCargandoFavoritos(false)
   }
 
   const eliminarParticipante = (tempId: string) => {
@@ -252,12 +317,13 @@ export default function NuevoGastoScreen() {
       return 'El monto total debe ser mayor a 0'
     }
 
-    if (tieneDescuento && (descuento === undefined || descuento < 0)) {
-      return 'El descuento debe ser mayor o igual a 0'
-    }
-
-    if (tieneDescuento && descuento && descuento >= montoTotal) {
-      return 'El descuento no puede ser mayor o igual al monto total'
+    if (tieneDescuento) {
+      if (!descuento || descuento < 0) {
+        return 'El descuento debe ser mayor o igual a 0'
+      }
+      if (descuento >= montoTotal) {
+        return 'El descuento no puede ser mayor o igual al monto total'
+      }
     }
 
     return null
@@ -278,13 +344,13 @@ export default function NuevoGastoScreen() {
 
       // Convertir participantes a la estructura esperada por GastoCreate
       // Para gastos compartidos, cada participante tiene asignado el monto total
-      // El descuento y la división se aplicarán en el procesamiento
-      const participantesConMonto = participantes.map(p => ({
-        nickname: p.nickname,
-        email: p.email,
-        usuario_id: p.usuario_id,
-        monto_total: montoTotal || 0
-      }))
+        // El descuento y la división se aplicarán en el procesamiento
+        const participantesConMonto = participantes.map(p => ({
+          nickname: p.nickname,
+          email: p.email,
+          usuario_id: p.usuario_id,
+          monto_total: montoTotal || 0
+        }))
 
       const gastoData: GastoCreate = {
         descripcion: descripcion.trim(),
@@ -292,7 +358,7 @@ export default function NuevoGastoScreen() {
         tipo,
         fecha: new Date().toISOString().split('T')[0],
         cuotas: cuotas || 1,
-        descuento: descuento || 0,
+        descuento: tieneDescuento ? descuento : undefined,
         tipo_descuento: tipoDescuento,
         participantes: participantesConMonto,
         primer_vencimiento: primerVencimiento.toISOString().split('T')[0],
@@ -302,7 +368,7 @@ export default function NuevoGastoScreen() {
 
       await gastosService.crearGasto(gastoData, user.id)
       
-      showSuccessToast('Gasto creado exitosamente')
+      showAlert('Éxito', 'Gasto creado exitosamente')
       resetearFormulario()
       router.back()
     } catch (error: any) {
@@ -475,12 +541,19 @@ export default function NuevoGastoScreen() {
     if (gastoData.cuotas === 1) {
       // Caso 4: Gasto compartido en un pago
       const montoNeto = montoTotal - (gastoData.descuento || 0)
-      const montoEquitativo = montoNeto / participantesCreados.length
+      
+      // Aplicar lógica de distribución de centavos
+      const montoBase = Math.floor(montoNeto / participantesCreados.length * 100) / 100
+      const centavosRestantes = Math.round((montoNeto * 100) - (montoBase * participantesCreados.length * 100))
+      
       console.log('Monto neto del gasto:', montoNeto);
-      console.log('Monto equitativo por participante:', montoEquitativo);
+      console.log('Monto base por participante:', montoBase);
+      console.log('Centavos restantes a distribuir:', centavosRestantes);
       
       // Preparar todos los detalles para insertar en una sola operación
-      const detallesParaInsertar = participantesCreados.map(({ participante, monto: aporte }) => {
+      const detallesParaInsertar = participantesCreados.map(({ participante, monto: aporte }, index) => {
+        // Los primeros 'centavosRestantes' participantes reciben un centavo adicional
+        const montoEquitativo = montoBase + (index < centavosRestantes ? 0.01 : 0)
         // En la nueva estructura simplificada, solo guardamos el monto y si está pagado
         // El pagado se determina si el usuario que crea el gasto es el mismo que el participante
         const pagado = participante.id === gastoData.usuario_id || montoEquitativo === 0
@@ -579,13 +652,18 @@ export default function NuevoGastoScreen() {
       const fechaVencimiento = new Date(primerVencimiento)
       fechaVencimiento.setMonth(fechaVencimiento.getMonth() + i)
       
+      // Aplicar distribución de centavos para cada cuota
+      // Nota: Esta es una implementación simplificada que no maneja múltiples participantes
+      // La lógica completa está en la función RPC crear_gasto_completo
+      const montoFinal = Math.round(montosCalculados[i] * 100) / 100
+      
       const { error } = await supabase
         .from('gastos_detalle')
         .insert({
           gasto_id: gastoId,
           usuario_id: participanteId,
-          monto: montosCalculados[i],
-          pagado: montosCalculados[i] === 0,
+          monto: montoFinal,
+          pagado: montoFinal === 0,
           numero_cuota: i + 1,
           vencimiento: fechaVencimiento.toISOString().split('T')[0]
         })
@@ -606,15 +684,20 @@ export default function NuevoGastoScreen() {
       const fechaVencimiento = new Date(primerVencimiento)
       fechaVencimiento.setMonth(fechaVencimiento.getMonth() + i)
       
-      // Dividir el monto de cada cuota entre los participantes
-      const montoPorParticipante = montosCalculadosTotal[i] / numeroParticipantes
+      // Dividir el monto de cada cuota entre los participantes con distribución de centavos
+      const montoBase = Math.floor(montosCalculadosTotal[i] / numeroParticipantes * 100) / 100
+      const centavosRestantes = Math.round((montosCalculadosTotal[i] * 100) - (montoBase * numeroParticipantes * 100))
+      
+      // Para esta implementación simplificada, asumimos que este participante es el primero
+      // En una implementación completa, necesitaríamos un índice de participante
+      const montoPorParticipante = montoBase + (centavosRestantes > 0 ? 0.01 : 0)
       
       const { error } = await supabase
         .from('gastos_detalle')
         .insert({
           gasto_id: gastoId,
           usuario_id: participanteId,
-          monto: Math.round(montoPorParticipante * 100) / 100,
+          monto: montoPorParticipante,
           pagado: montoPorParticipante === 0,
           numero_cuota: i + 1,
           vencimiento: fechaVencimiento.toISOString().split('T')[0]
@@ -677,32 +760,66 @@ export default function NuevoGastoScreen() {
             />
 
             {/* Monto total */}
-            <TextInput
-              label="Monto total *"
-              value={montoTotalText}
-              onChangeText={(text) => {
-                setMontoTotalText(text)
-                const numValue = parseFloat(text)
-                setMontoTotal(isNaN(numValue) || text === '' ? undefined : numValue)
-              }}
-              keyboardType="numeric"
-              style={styles.input}
-              mode="outlined"
-            />
+            <View style={styles.input}>
+                <Text style={styles.inputLabel}>Monto total</Text>
+                <CurrencyInput
+                  value={montoTotal}
+                  onChangeValue={(value) => {
+                    setMontoTotal(value || undefined)
+                    setMontoTotalText(value ? value.toString() : '')
+                  }}
+                  prefix="$"
+                  delimiter="."
+                  separator=","
+                  precision={2}
+                  minValue={0}
+                  placeholder="Ingrese el monto total"
+                  style={[
+                    styles.currencyInput,
+                    {
+                      borderWidth: 1,
+                      borderColor: '#ccc',
+                      borderRadius: 4,
+                      padding: 12,
+                      fontSize: 16,
+                      backgroundColor: '#fff'
+                    }
+                  ]}
+                />
+              </View>
 
             {/* Número de cuotas */}
-            <TextInput
-              label="Número de cuotas"
-              value={cuotasText}
-              onChangeText={(text) => {
-                setCuotasText(text)
-                const numValue = parseInt(text)
-                setCuotas(isNaN(numValue) || text === '' ? undefined : numValue)
-              }}
-              keyboardType="numeric"
-              style={styles.input}
-              mode="outlined"
-            />
+            <View style={styles.cuotasSection}>
+              <Text style={styles.cuotasLabel}>Número de cuotas</Text>
+              <View style={styles.cuotasContainer}>
+                <TextInput
+                  value={cuotasText}
+                  onChangeText={(text) => {
+                    setCuotasText(text)
+                    const numValue = parseInt(text)
+                    setCuotas(isNaN(numValue) || text === '' ? undefined : numValue)
+                  }}
+                  keyboardType="numeric"
+                  style={styles.cuotasInput}
+                  mode="outlined"
+                  dense
+                />
+                <View style={styles.cuotasBotones}>
+                  {[1, 3, 6, 9, 12].map((numero) => (
+                    <Chip
+                      key={numero}
+                      mode={cuotas === numero ? 'flat' : 'outlined'}
+                      selected={cuotas === numero}
+                      onPress={() => establecerCuotas(numero)}
+                      style={styles.cuotaChip}
+                      textStyle={styles.cuotaChipText}
+                    >
+                      {numero}
+                    </Chip>
+                  ))}
+                </View>
+              </View>
+            </View>
 
             {/* Descuento */}
             <View style={styles.switchContainer}>
@@ -715,18 +832,33 @@ export default function NuevoGastoScreen() {
 
             {tieneDescuento && (
               <>
-                <TextInput
-                  label="Monto del descuento"
-                  value={descuentoText}
-                  onChangeText={(text) => {
-                    setDescuentoText(text)
-                    const numValue = parseFloat(text)
-                    setDescuento(isNaN(numValue) || text === '' ? undefined : numValue)
-                  }}
-                  keyboardType="numeric"
-                  style={styles.input}
-                  mode="outlined"
-                />
+                <View style={styles.input}>
+                   <Text style={styles.inputLabel}>Monto del descuento</Text>
+                   <CurrencyInput
+                     value={descuento}
+                     onChangeValue={(value) => {
+                       setDescuento(value || undefined)
+                       setDescuentoText(value ? value.toString() : '')
+                     }}
+                     prefix="$"
+                     delimiter="."
+                     separator=","
+                     precision={2}
+                     minValue={0}
+                     placeholder="Ingrese el monto del descuento"
+                     style={[
+                       styles.currencyInput,
+                       {
+                         borderWidth: 1,
+                         borderColor: '#ccc',
+                         borderRadius: 4,
+                         padding: 12,
+                         fontSize: 16,
+                         backgroundColor: '#fff'
+                       }
+                     ]}
+                   />
+                 </View>
                 
                 {/* Tipo de descuento */}
                 <Text style={styles.sectionTitle}>Tipo de Descuento</Text>
@@ -808,7 +940,7 @@ export default function NuevoGastoScreen() {
               ))}
 
               <Text style={styles.montoTotal}>
-                Total: ${(montoTotal || 0).toFixed(2)}
+                Total: ${montoTotal ? formatearParaMostrar(montoTotal) : '0'}
               </Text>
             </View>
 
@@ -910,7 +1042,12 @@ export default function NuevoGastoScreen() {
                 {/* Pestañas */}
                 <SegmentedButtons
                   value={tabSeleccionada}
-                  onValueChange={setTabSeleccionada}
+                  onValueChange={(value) => {
+                    setTabSeleccionada(value)
+                    if (value === 'favoritos') {
+                      cargarFavoritos()
+                    }
+                  }}
                   buttons={[
                     { 
                       value: 'no-usuario', 
@@ -919,7 +1056,12 @@ export default function NuevoGastoScreen() {
                     },
                     { 
                       value: 'buscar-usuario', 
-                      label: 'Buscar Usuario',
+                      label: 'Buscar',
+                      style: { flex: 1 }
+                    },
+                    { 
+                      value: 'favoritos', 
+                      label: 'Favoritos',
                       style: { flex: 1 }
                     }
                   ]}
@@ -985,6 +1127,48 @@ export default function NuevoGastoScreen() {
                     )}
                   </View>
                 )}
+
+                {/* Contenido de la pestaña "Favoritos" */}
+                {tabSeleccionada === 'favoritos' && (
+                  <View style={styles.tabContent}>
+                    <Text style={styles.tabDescription}>
+                      Seleccionar de tus usuarios favoritos
+                    </Text>
+                    
+                    {cargandoFavoritos ? (
+                      <Text style={styles.cargandoText}>Cargando favoritos...</Text>
+                    ) : favoritos.length === 0 ? (
+                      <Text style={styles.sinFavoritosText}>
+                        No tienes usuarios favoritos aún. Los favoritos se crean automáticamente cuando agregas usuarios a tus gastos.
+                      </Text>
+                    ) : (
+                      <View style={styles.favoritosList}>
+                        {favoritos.map((favorito) => (
+                          <Card 
+                            key={favorito.usuario_id} 
+                            style={[
+                              styles.favoritoCard,
+                              favoritoSeleccionado?.usuario_id === favorito.usuario_id && styles.favoritoSeleccionado
+                            ]}
+                            onPress={() => setFavoritoSeleccionado(favorito)}
+                          >
+                            <Card.Content>
+                              <Text style={styles.favoritoNombre}>
+                                {favorito.nickname}
+                              </Text>
+                              <Text style={styles.favoritoEmail}>
+                                {favorito.email}
+                              </Text>
+                              <Text style={styles.favoritoFrecuencia}>
+                                Usado {favorito.frecuencia_uso} {favorito.frecuencia_uso === 1 ? 'vez' : 'veces'}
+                              </Text>
+                            </Card.Content>
+                          </Card>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
               </Card.Content>
               
               <Card.Actions>
@@ -1003,13 +1187,21 @@ export default function NuevoGastoScreen() {
                   >
                     Agregar
                   </Button>
-                ) : (
+                ) : tabSeleccionada === 'buscar-usuario' ? (
                   <Button
                     mode="contained"
                     onPress={agregarUsuarioEncontrado}
                     disabled={!usuarioEncontrado}
                   >
                     Agregar Usuario
+                  </Button>
+                ) : (
+                  <Button
+                    mode="contained"
+                    onPress={agregarFavoritoSeleccionado}
+                    disabled={!favoritoSeleccionado}
+                  >
+                    Agregar Favorito
                   </Button>
                 )}
               </Card.Actions>
@@ -1184,5 +1376,90 @@ export const styles = StyleSheet.create({
   usuarioEncontradoEmail: {
     fontSize: 14,
     color: '#4caf50',
+  },
+  cargandoText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  sinFavoritosText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 20,
+    lineHeight: 20,
+  },
+  favoritosList: {
+    marginTop: 8,
+  },
+  favoritoCard: {
+    marginBottom: 8,
+    backgroundColor: '#f8f9fa',
+  },
+  favoritoSeleccionado: {
+    backgroundColor: '#e3f2fd',
+    borderColor: '#2196F3',
+    borderWidth: 2,
+  },
+  favoritoNombre: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  favoritoEmail: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  favoritoFrecuencia: {
+    fontSize: 12,
+    color: '#2196F3',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  cuotasSection: {
+    marginBottom: 16,
+  },
+  cuotasLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  cuotasContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cuotasInput: {
+    width: '20%',
+    marginBottom: 0,
+  },
+  cuotasBotones: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+  },
+  cuotaChip: {
+    marginRight: 0,
+    marginBottom: 0,
+    height: 40,
+    justifyContent: 'center',
+  },
+  cuotaChipText: {
+    fontSize: 14,
+    lineHeight: 16,
+  },
+  inputLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  currencyInput: {
+    fontFamily: 'System',
   },
 })

@@ -31,26 +31,17 @@ import { useMonth } from '../../contexts/MonthContext'
 
 export default function GastosScreen() {
   const [gastosUnificados, setGastosUnificados] = useState<GastoCuotaUnificada[]>([])
-  const [gastosCompartidosComoParticipante, setGastosCompartidosComoParticipante] = useState<GastoCuotaUnificada[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [filtroTipo, setFiltroTipo] = useState<TipoGasto | 'todos' | 'participo'>('todos')
+  const [filtroTipo, setFiltroTipo] = useState<TipoGasto | 'todos'>('todos')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [gastoAEliminar, setGastoAEliminar] = useState<GastoCuotaUnificada | null>(null)
   const [eliminando, setEliminando] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const { mesActual, añoActual, navegarMesAnterior, navegarMesSiguiente } = useMonth()
 
-  useEffect(() => {
-    cargarGastos()
-  }, [])
-
-  useEffect(() => {
-    cargarGastos()
-  }, [mesActual, añoActual])
-
-  // Recargar datos cada vez que se enfoque la pestaña
+  // Recargar datos cada vez que se enfoque la pestaña o cambien mes/año
   useFocusEffect(
     React.useCallback(() => {
       cargarGastos()
@@ -71,15 +62,11 @@ export default function GastosScreen() {
 
       setCurrentUserId(user.id)
       
-      // Cargar gastos propios y compartidos (función original)
+      // Cargar gastos unificados (incluye propios y compartidos)
       const gastosUnificadosData = await gastosService.obtenerGastosCuotasUnificadas(user.id, mesActual, añoActual)
       setGastosUnificados(gastosUnificadosData)
       
-      // Cargar gastos compartidos donde participo pero no soy creador
-      const gastosCompartidosComoParticipanteData = await gastosService.obtenerGastosCompartidosComoParticipante(user.id, mesActual, añoActual)
-      setGastosCompartidosComoParticipante(gastosCompartidosComoParticipanteData)
-      
-      console.log('Gastos compartidos como participante:', gastosCompartidosComoParticipanteData.length)
+      console.log('Gastos cargados:', gastosUnificadosData.length)
     } catch (error) {
       console.error('Error cargando gastos:', error)
       showAlert('Error', 'No se pudieron cargar los gastos')
@@ -196,7 +183,6 @@ export default function GastosScreen() {
   }
 
   const gastosUnificadosArray = Array.isArray(gastosUnificados) ? gastosUnificados : []
-  const gastosCompartidosComoParticipanteArray = Array.isArray(gastosCompartidosComoParticipante) ? gastosCompartidosComoParticipante : []
   
   // Filtrar gastos según el filtro seleccionado
   let gastosFiltrados = gastosUnificadosArray
@@ -205,11 +191,8 @@ export default function GastosScreen() {
     gastosFiltrados = gastosUnificadosArray.filter(gasto => gasto.tipo === 'personal')
   } else if (filtroTipo === 'compartido') {
     gastosFiltrados = gastosUnificadosArray.filter(gasto => gasto.tipo === 'compartido')
-  } else if (filtroTipo === 'participo') {
-    gastosFiltrados = gastosCompartidosComoParticipanteArray
   } else if (filtroTipo === 'todos') {
-    // Combinar gastos propios y compartidos donde participo
-    gastosFiltrados = [...gastosUnificadosArray, ...gastosCompartidosComoParticipanteArray]
+    gastosFiltrados = gastosUnificadosArray
   }
   
   // Aplicar filtro de búsqueda
@@ -258,12 +241,12 @@ export default function GastosScreen() {
   const renderGasto = ({ item: gasto }: { item: GastoCuotaUnificada }) => {
     const esGastoPropio = gasto.usuario_id === currentUserId
     const esGastoCompartido = !esGastoPropio && gasto.tipo === 'compartido'
-    const esGastoParticipo = filtroTipo === 'participo' || gastosCompartidosComoParticipanteArray.some(g => g.gasto_id === gasto.gasto_id)
+    const esGastoParticipo = false // Ya no se usa el filtro 'participo'
     const esCuotas = (gasto.cuotas || 1) > 1
     
     // Calcular porcentaje de pago - usar datos específicos del usuario para gastos compartidos
     const porcentajePago = esGastoCompartido 
-      ? Math.round(gasto.porcentaje_pagado_usuario || 0)
+      ? Math.round(gasto.porcentaje_pagado_usuario *100|| 0)
       : Math.round(gasto.porcentaje_pagado)
     const cuotaCompletamentePagada = esGastoCompartido 
       ? gasto.usuario_completamente_pagado
@@ -477,27 +460,18 @@ export default function GastosScreen() {
             </Text>
           </TouchableOpacity>
           
-          <TouchableOpacity
-            style={[
-              styles.filtroButton,
-              filtroTipo === 'participo' && styles.filtroButtonActive
-            ]}
-            onPress={() => setFiltroTipo('participo')}
-          >
-            <Text style={[
-              styles.filtroButtonText,
-              filtroTipo === 'participo' && styles.filtroButtonTextActive
-            ]}>
-              Participo
-            </Text>
-          </TouchableOpacity>
+
         </View>
       </View>
 
       <FlatList
         data={gastosFiltrados}
         renderItem={renderGasto}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => {
+          // Crear key única combinando gasto_id, numero_cuota y id del gasto_detalle
+          // para evitar duplicados cuando se combinan gastos propios y compartidos
+          return `${item.gasto_id}-${item.numero_cuota}-${item.id}`
+        }}
         contentContainerStyle={styles.lista}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -652,11 +626,7 @@ const styles = StyleSheet.create({
     borderLeftColor: '#FF9800',
     backgroundColor: '#FFF8E1',
   },
-  gastoParticipoRowCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#9C27B0',
-    backgroundColor: '#F3E5F5',
-  },
+
   gastoRowContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -717,15 +687,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
   },
-  gastoRowParticipoChip: {
-    backgroundColor: '#F3E5F5',
-    height: 24,
-  },
-  gastoRowParticipoChipText: {
-    color: '#7B1FA2',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
+
   gastoRowCenter: {
     flex: 1.5,
     alignItems: 'center',
