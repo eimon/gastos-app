@@ -133,7 +133,6 @@ export default function GastoDetalleScreen() {
 
       setGastosCuota(gastosIndividuales)
     } catch (error: any) {
-      console.error('Error cargando detalle del gasto:', error)
       showAlert('Error', 'No se pudo cargar el detalle del gasto')
       router.back()
     } finally {
@@ -231,7 +230,6 @@ export default function GastoDetalleScreen() {
         cargarGastoDetalle(gastoId, numeroCuota)
       }
     } catch (error: any) {
-      console.error('Error registrando pago:', error)
       showAlert('Error', error.message || 'No se pudo registrar el pago')
     }
   }
@@ -369,7 +367,6 @@ export default function GastoDetalleScreen() {
         .rpc('obtener_favoritos_usuario')
 
       if (error) {
-        console.error('Error cargando favoritos:', error)
         return
       }
 
@@ -385,7 +382,6 @@ export default function GastoDetalleScreen() {
 
       setFavoritos(favoritosFiltrados)
     } catch (error) {
-      console.error('Error cargando favoritos:', error)
     } finally {
       setCargandoFavoritos(false)
     }
@@ -410,7 +406,6 @@ export default function GastoDetalleScreen() {
       cerrarModalCambiarParticipante()
       cargarGastoDetalle(gastoId, numeroCuota)
     } catch (error: any) {
-      console.error('Error cambiando participante:', error)
       showAlert('Error', error.message || 'No se pudo cambiar el participante')
     }
   }
@@ -434,7 +429,6 @@ export default function GastoDetalleScreen() {
         setUsuarioEncontrado(data)
       }
     } catch (error) {
-      console.error('Error buscando usuario:', error)
       showAlert('Error', 'Error al buscar el usuario')
     } finally {
       setBuscandoUsuario(false)
@@ -478,7 +472,6 @@ export default function GastoDetalleScreen() {
       cerrarModalCambiarParticipante()
       cargarGastoDetalle(gastoId, numeroCuota)
     } catch (error: any) {
-      console.error('Error cambiando participante:', error)
       showAlert('Error', error.message || 'No se pudo cambiar el participante')
     }
   }
@@ -503,7 +496,6 @@ export default function GastoDetalleScreen() {
       cerrarModalCambiarParticipante()
       cargarGastoDetalle(gastoId, numeroCuota)
     } catch (error: any) {
-      console.error('Error cambiando participante:', error)
       showAlert('Error', error.message || 'No se pudo cambiar el participante')
     }
   }
@@ -533,7 +525,6 @@ export default function GastoDetalleScreen() {
       // Recargar los datos
       cargarGastoDetalle(gastoId, numeroCuota)
     } catch (error: any) {
-      console.error('Error actualizando monto:', error)
       showAlert('Error', error.message || 'No se pudo actualizar el monto')
     }
   }
@@ -562,7 +553,6 @@ export default function GastoDetalleScreen() {
       if (pagosError) throw pagosError
       return pagos && pagos.length > 0
     } catch (error) {
-      console.error('Error verificando pagos:', error)
       return false
     }
   }
@@ -616,7 +606,6 @@ export default function GastoDetalleScreen() {
       // Recargar los datos
       cargarGastoDetalle(gastoId, numeroCuota)
     } catch (error: any) {
-      console.error('Error actualizando gasto:', error)
       showAlert('Error', error.message || 'No se pudo actualizar el gasto')
     }
   }
@@ -709,7 +698,7 @@ export default function GastoDetalleScreen() {
                 cargarGastoDetalle(gastoId, numeroCuota)
               }
             } catch (error: any) {
-              console.error('Error eliminando pago:', error)
+              error('Error eliminando pago:', error)
               showAlert('Error', 'No se pudo eliminar el pago')
             }
           },

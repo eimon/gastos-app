@@ -57,7 +57,6 @@ export default function GastosScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || !user.id) {
-        console.log('Usuario no autenticado')
         setLoading(false)
         setRefreshing(false)
         return
@@ -69,9 +68,7 @@ export default function GastosScreen() {
       const gastosUnificadosData = await gastosService.obtenerGastosCuotasUnificadas(user.id, mesActual, añoActual)
       setGastosUnificados(gastosUnificadosData)
       
-      console.log('Gastos cargados:', gastosUnificadosData.length)
     } catch (error) {
-      console.error('Error cargando gastos:', error)
       showAlert('Error', 'No se pudieron cargar los gastos')
     } finally {
       setLoading(false)
@@ -91,7 +88,6 @@ export default function GastosScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || !user.id) {
-        console.log('Usuario no autenticado en eliminarGasto')
         return
       }
 

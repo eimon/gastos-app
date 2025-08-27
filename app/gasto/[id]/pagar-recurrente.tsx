@@ -97,7 +97,6 @@ export default function PagarRecurrenteScreen() {
       
       setGastosCuota(Array.from(gastosMap.values()))
     } catch (error: any) {
-      console.error('Error cargando detalle del gasto:', error)
       showAlert('Error', 'No se pudo cargar el detalle del gasto')
       router.back()
     } finally {
@@ -180,7 +179,6 @@ export default function PagarRecurrenteScreen() {
             showAlert('Éxito', `Gasto recurrente generado para el próximo mes con monto ${formatearMonto(montoFinal)}`)
           }
         } catch (recurrenteError) {
-          console.error('Error generando gasto recurrente:', recurrenteError)
           showAlert('Advertencia', 'Los pagos se registraron correctamente, pero hubo un error generando el gasto recurrente')
         }
       }
@@ -189,7 +187,6 @@ export default function PagarRecurrenteScreen() {
       // Navegar de vuelta y forzar recarga de la vista de detalle
       router.replace(`/gasto/${gastoId}-cuota-${numeroCuota}`)
     } catch (error: any) {
-      console.error('Error registrando pagos:', error)
       showAlert('Error', error.message || 'No se pudieron registrar los pagos')
     } finally {
       setGuardando(false)

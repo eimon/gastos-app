@@ -88,7 +88,6 @@ export default function PagarTodoScreen() {
       
       setGastosCuota(gastosConDetalles)
     } catch (error: any) {
-      console.error('Error cargando detalle del gasto:', error)
       showAlert('Error', 'No se pudo cargar el detalle del gasto')
       router.back()
     } finally {
@@ -160,7 +159,6 @@ export default function PagarTodoScreen() {
       // Navegar de vuelta y forzar recarga de la vista de detalle
       router.replace(`/gasto/${gastoId}-cuota-${numeroCuota}`)
     } catch (error: any) {
-      console.error('Error registrando pagos:', error)
       showAlert('Error', error.message || 'No se pudieron registrar los pagos')
     } finally {
       setGuardando(false)

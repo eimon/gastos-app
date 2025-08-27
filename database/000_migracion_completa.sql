@@ -1391,32 +1391,54 @@ BEGIN
     v_participantes_count := jsonb_array_length(p_participantes);
     
     -- Calcular montos con descuento aplicado
+    -- CORRECCIÓN: Calculamos primero el monto total por participante para evitar errores de redondeo acumulativos
     DECLARE
         v_descuento_restante DECIMAL(10,2) := p_descuento;
+        v_monto_total_ajustado DECIMAL(10,2);
+        v_monto_por_participante_total DECIMAL(10,2);
+        v_monto_por_participante_por_cuota DECIMAL(10,2);
+        v_centavos_restantes_por_participante INTEGER;
+        v_monto_base_por_participante DECIMAL(10,2);
     BEGIN
+        -- Calcular monto total ajustado después del descuento
+        v_monto_total_ajustado := p_monto_total - p_descuento;
+        
+        -- Calcular monto por participante total
+        v_monto_por_participante_total := v_monto_total_ajustado / v_participantes_count;
+        
+        -- Calcular monto base por participante por cuota (sin centavos)
+        v_monto_base_por_participante := FLOOR(v_monto_por_participante_total / p_cuotas * 100) / 100;
+        
+        -- Calcular centavos restantes por participante que deben distribuirse
+        v_centavos_restantes_por_participante := (v_monto_por_participante_total * 100)::INTEGER - (v_monto_base_por_participante * p_cuotas * 100)::INTEGER;
+        
         FOR v_cuota IN 1..p_cuotas LOOP
-            v_monto_por_cuota := p_monto_total / p_cuotas;
-            
-            -- Aplicar descuento según tipo
-            IF p_descuento > 0 THEN
-                IF p_tipo_descuento = 'uniforme' THEN
-                    -- Descuento uniforme: se aplica a todas las cuotas por igual
-                    v_monto_por_cuota := v_monto_por_cuota - (p_descuento / p_cuotas);
-                ELSIF p_tipo_descuento = 'prorrateo' AND v_descuento_restante > 0 THEN
-                    -- Descuento por prorrateo: se aplica progresivamente hasta agotarse
-                    IF v_descuento_restante >= v_monto_por_cuota THEN
-                        -- El descuento restante cubre toda la cuota
-                        v_descuento_restante := v_descuento_restante - v_monto_por_cuota;
-                        v_monto_por_cuota := 0;
-                    ELSE
-                        -- El descuento restante cubre solo parte de la cuota
-                        v_monto_por_cuota := v_monto_por_cuota - v_descuento_restante;
-                        v_descuento_restante := 0;
-                    END IF;
-                END IF;
+            -- Calcular monto por participante para esta cuota
+            IF v_cuota <= v_centavos_restantes_por_participante THEN
+                v_monto_por_participante_por_cuota := v_monto_base_por_participante + 0.01;
+            ELSE
+                v_monto_por_participante_por_cuota := v_monto_base_por_participante;
             END IF;
             
-            v_montos_calculados[v_cuota] := v_monto_por_cuota;
+            -- Aplicar descuento según tipo (solo para compatibilidad con descuentos por prorrateo)
+            IF p_descuento > 0 AND p_tipo_descuento = 'prorrateo' AND v_descuento_restante > 0 THEN
+                DECLARE
+                    v_monto_cuota_total DECIMAL(10,2) := v_monto_por_participante_por_cuota * v_participantes_count;
+                BEGIN
+                    IF v_descuento_restante >= v_monto_cuota_total THEN
+                        -- El descuento restante cubre toda la cuota
+                        v_descuento_restante := v_descuento_restante - v_monto_cuota_total;
+                        v_monto_por_participante_por_cuota := 0;
+                    ELSE
+                        -- El descuento restante cubre solo parte de la cuota
+                        v_monto_por_participante_por_cuota := v_monto_por_participante_por_cuota - (v_descuento_restante / v_participantes_count);
+                        v_descuento_restante := 0;
+                    END IF;
+                END;
+            END IF;
+            
+            -- El monto total de la cuota es el monto por participante multiplicado por la cantidad de participantes
+            v_montos_calculados[v_cuota] := v_monto_por_participante_por_cuota * v_participantes_count;
         END LOOP;
     END;
     
@@ -1451,26 +1473,26 @@ BEGIN
         v_fecha_vencimiento := p_primer_vencimiento + INTERVAL '1 month' * (v_cuota - 1);
         
         -- Variables para manejar la precisión y distribución equitativa de centavos
-        -- Esta lógica asegura que la suma de los detalles sea exactamente igual al monto de la cuota
+        -- CORRECCIÓN: Usamos la nueva lógica que ya calcula correctamente el monto por participante
         DECLARE
             v_participante_index INTEGER := 0;
-            v_monto_base DECIMAL(10,2);
-            v_centavos_restantes INTEGER;
+            v_monto_por_participante_cuota DECIMAL(10,2);
+            v_centavos_restantes_cuota INTEGER;
             v_monto_ajustado DECIMAL(10,2);
         BEGIN
-            -- Calcular monto base (sin centavos) y centavos restantes
-            v_monto_base := FLOOR(v_montos_calculados[v_cuota] / v_participantes_count * 100) / 100;
-            v_centavos_restantes := (v_montos_calculados[v_cuota] * 100)::INTEGER - (v_monto_base * v_participantes_count * 100)::INTEGER;
+            -- Calcular monto por participante para esta cuota específica
+            v_monto_por_participante_cuota := FLOOR(v_montos_calculados[v_cuota] / v_participantes_count * 100) / 100;
+            v_centavos_restantes_cuota := (v_montos_calculados[v_cuota] * 100)::INTEGER - (v_monto_por_participante_cuota * v_participantes_count * 100)::INTEGER;
             
             -- Crear detalle para cada participante
             FOR v_participante IN SELECT * FROM jsonb_array_elements(p_participantes) LOOP
                 v_participante_index := v_participante_index + 1;
                 
                 -- Distribuir centavos restantes entre los primeros participantes
-                IF v_participante_index <= v_centavos_restantes THEN
-                    v_monto_ajustado := v_monto_base + 0.01;
+                IF v_participante_index <= v_centavos_restantes_cuota THEN
+                    v_monto_ajustado := v_monto_por_participante_cuota + 0.01;
                 ELSE
-                    v_monto_ajustado := v_monto_base;
+                    v_monto_ajustado := v_monto_por_participante_cuota;
                 END IF;
                 
                 INSERT INTO public.gastos_detalle (

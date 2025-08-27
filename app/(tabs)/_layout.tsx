@@ -1,17 +1,33 @@
 // app/(tabs)/_layout.tsx - Layout de las tabs
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import { View, StyleSheet } from 'react-native'
+import { View, StyleSheet, Image, TouchableOpacity } from 'react-native'
 import { showAlert, showConfirm } from '../../lib/alerts'
 import { Menu, IconButton, Provider } from 'react-native-paper'
 import { supabase } from '../../lib/supabase'
 
 function HeaderMenu() {
   const [visible, setVisible] = useState(false)
+  const [userAvatar, setUserAvatar] = useState<string | null>(null)
 
   const openMenu = () => setVisible(true)
   const closeMenu = () => setVisible(false)
+
+  useEffect(() => {
+    const getUserAvatar = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.user_metadata?.picture) {
+          setUserAvatar(user.user_metadata.picture)
+        }
+      } catch (error) {
+        // Si hay error, no mostrar avatar
+      }
+    }
+
+    getUserAvatar()
+  }, [])
 
   const handleLogout = async () => {
     closeMenu()
@@ -30,13 +46,23 @@ function HeaderMenu() {
         visible={visible}
         onDismiss={closeMenu}
         anchor={
-          <IconButton
-            icon="menu"
-            size={24}
-            iconColor="#1e293b"
-            onPress={openMenu}
-            style={styles.menuButton}
-          />
+          userAvatar ? (
+            <TouchableOpacity onPress={openMenu} style={styles.avatarButton}>
+              <Image 
+                source={{ uri: userAvatar }} 
+                style={styles.avatar}
+                defaultSource={require('../../assets/icon.png')}
+              />
+            </TouchableOpacity>
+          ) : (
+            <IconButton
+              icon="menu"
+              size={24}
+              iconColor="#1e293b"
+              onPress={openMenu}
+              style={styles.menuButton}
+            />
+          )
         }
         contentStyle={styles.menuContent}
       >
@@ -123,6 +149,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+  },
+  avatarButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 20,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f0f0f0',
   },
   menuContent: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',

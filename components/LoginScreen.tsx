@@ -20,6 +20,7 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../lib/supabase'
 import { showAlert } from '../lib/alerts'
+import { handleGoogleOAuth, signInWithGoogleNative, configureGoogleSignIn } from '../lib/auth'
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('')
@@ -52,11 +53,6 @@ export default function LoginScreen() {
 
         const displayName = `${firstName.trim()} ${lastName.trim()}`
         
-        console.log('Intentando registro con:', {
-           email: email,
-           nickname: displayName
-         })
-        
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -69,8 +65,6 @@ export default function LoginScreen() {
           }
         })
         
-        console.log('Respuesta de registro:', { data, error })
-
         if (error) throw error
 
         if (data.user && !data.session) {
@@ -89,7 +83,6 @@ export default function LoginScreen() {
         if (error) throw error
       }
     } catch (error: any) {
-      console.error('Auth error:', error)
       let errorMessage = 'Error de conexión con el servidor'
       
       if (error.message && error.message.includes('JSON Parse error')) {
@@ -110,10 +103,15 @@ export default function LoginScreen() {
 
   const handleGoogleAuth = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-      })
-      if (error) throw error
+      if (Platform.OS === 'android') {
+        // Configurar Google Sign-In antes del primer uso
+        await configureGoogleSignIn()
+        // Usar método nativo en Android
+        await signInWithGoogleNative()
+      } else {
+        // Usar método web en iOS y otras plataformas
+        await handleGoogleOAuth()
+      }
     } catch (error: any) {
       showAlert('Error', error.message)
     }

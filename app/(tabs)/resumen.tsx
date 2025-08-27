@@ -82,7 +82,6 @@ export default function ResumenScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || !user.id) {
-        console.log('Usuario no autenticado')
         setLoading(false)
         setRefreshing(false)
         return
@@ -132,7 +131,6 @@ export default function ResumenScreen() {
       const gastosAdeudadosData = await resumenService.obtenerGastosAdeudados(user.id, mesActual, añoActual)
       setGastosAdeudados(gastosAdeudadosData)
     } catch (error) {
-      console.error('Error cargando datos:', error)
       showAlert('Error', 'No se pudieron cargar los datos')
     } finally {
       setLoading(false)

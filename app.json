@@ -2,7 +2,7 @@
   "expo": {
     "name": "Gastos App",
     "slug": "gastosapp",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -24,7 +24,21 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.gastosapp.mobile",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "tmaxjfuxfczypjbrqelq.supabase.co",
+              "pathPrefix": "/auth/v1/callback"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",

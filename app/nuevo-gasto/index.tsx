@@ -157,7 +157,6 @@ export default function NuevoGastoScreen() {
 
       setParticipantes([participanteUsuario])
     } catch (error) {
-      console.error('Error obteniendo usuario:', error)
     }
   }
 
@@ -171,7 +170,6 @@ export default function NuevoGastoScreen() {
     try {
       const { data: usuarios, error } = await supabase
         .rpc('buscar_usuarios', { termino_busqueda: emailBusqueda.trim() })
-      console.log('Usuarios encontrados:', usuarios, 'email búsqueda: ', emailBusqueda.trim())
 
       const usuario = usuarios?.[0]
 
@@ -189,7 +187,6 @@ export default function NuevoGastoScreen() {
 
       setUsuarioEncontrado(usuario)
     } catch (error) {
-      console.error('Error buscando usuario:', error)
       showAlert('Error', 'Error al buscar el usuario')
     } finally {
       setBuscandoUsuario(false)
@@ -206,7 +203,6 @@ export default function NuevoGastoScreen() {
         .rpc('obtener_favoritos_usuario')
 
       if (error) {
-        console.error('Error cargando favoritos:', error)
         return
       }
 
@@ -224,7 +220,6 @@ export default function NuevoGastoScreen() {
 
       setFavoritos(favoritosFiltrados)
     } catch (error) {
-      console.error('Error cargando favoritos:', error)
     } finally {
       setCargandoFavoritos(false)
     }
@@ -440,7 +435,6 @@ export default function NuevoGastoScreen() {
       resetearFormulario()
       router.back()
     } catch (error: any) {
-      console.error('Error creando gasto:', error)
       showAlert('Error', error.message || 'No se pudo crear el gasto')
     } finally {
       setLoading(false)
@@ -448,12 +442,9 @@ export default function NuevoGastoScreen() {
   }
 
   const crearGastoCompleto = async (gastoData: GastoCreate, userId: string) => {
-    console.log('=== INICIO crearGastoCompleto ===');
-    console.log('Datos del gasto recibidos:', JSON.stringify(gastoData, null, 2));
     
     // El monto total se toma directamente del gastoData
     const montoTotal = gastoData.monto_total
-    console.log('Monto total del gasto:', montoTotal);
 
     // Crear el gasto principal
     const { data: gasto, error: gastoError } = await supabase
@@ -591,9 +582,6 @@ export default function NuevoGastoScreen() {
   }
 
   const procesarGastoCompartido = async (gastoId: string, gastoData: GastoCreate, participantesCreados: any[]) => {
-    console.log('=== INICIO procesarGastoCompartido (nuevo-gasto/index.tsx) ===');
-    console.log('Gasto ID:', gastoId);
-    console.log('Participantes creados:', JSON.stringify(participantesCreados, null, 2));
     
     // Para gastos compartidos, el monto total ya está calculado correctamente en crearGastoCompleto
     // Necesitamos obtener el monto total del gasto creado
@@ -604,7 +592,6 @@ export default function NuevoGastoScreen() {
       .single()
     
     const montoTotal = gastoCreado?.monto_total || 0
-    console.log('Monto total del gasto:', montoTotal);
     
     if (gastoData.cuotas === 1) {
       // Caso 4: Gasto compartido en un pago
@@ -613,10 +600,6 @@ export default function NuevoGastoScreen() {
       // Aplicar lógica de distribución de centavos
       const montoBase = Math.floor(montoNeto / participantesCreados.length * 100) / 100
       const centavosRestantes = Math.round((montoNeto * 100) - (montoBase * participantesCreados.length * 100))
-      
-      console.log('Monto neto del gasto:', montoNeto);
-      console.log('Monto base por participante:', montoBase);
-      console.log('Centavos restantes a distribuir:', centavosRestantes);
       
       // Preparar todos los detalles para insertar en una sola operación
       const detallesParaInsertar = participantesCreados.map(({ participante, monto: aporte }, index) => {
@@ -634,14 +617,10 @@ export default function NuevoGastoScreen() {
           numero_cuota: 1
         };
         
-        console.log(`Preparando detalle para participante ${participante.nickname}:`, JSON.stringify(detalleInsert, null, 2));
-        console.log(`Lógica: aporte=${aporte}, monto_equitativo=${montoEquitativo}, pagado=${pagado}`);
-        
         return detalleInsert;
       });
       
       // Insertar todos los detalles en una sola operación para evitar problemas con el trigger de validación
-      console.log('Insertando todos los detalles en una operación:', JSON.stringify(detallesParaInsertar, null, 2));
       
       const { data: detalles, error } = await supabase
         .from('gastos_detalle')
@@ -649,11 +628,8 @@ export default function NuevoGastoScreen() {
         .select()
       
       if (error) {
-        console.error('Error al insertar gastos_detalle:', error);
         throw error;
       }
-      
-      console.log('Todos los detalles creados exitosamente:', detalles);
       
       // Si está marcado como pagado, crear pagos automáticos para todos los participantes
       if (gastoData.pagado && detalles && detalles.length > 0) {
@@ -669,11 +645,9 @@ export default function NuevoGastoScreen() {
           .insert(pagosParaInsertar)
         
         if (pagosError) {
-          console.error('Error al crear pagos automáticos:', pagosError);
           throw pagosError;
         }
         
-        console.log('Pagos automáticos creados exitosamente para gasto compartido');
       }
     } else {
       // Casos 5 y 6: Gasto compartido en cuotas

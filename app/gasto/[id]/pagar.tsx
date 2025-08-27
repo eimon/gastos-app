@@ -100,7 +100,6 @@ export default function PagarGastoScreen() {
         }
       }
     } catch (error: any) {
-      console.error('Error cargando detalle del gasto:', error)
       showAlert('Error', 'No se pudo cargar el detalle del gasto')
       router.back()
     } finally {
@@ -174,7 +173,6 @@ export default function PagarGastoScreen() {
       // Navegar de vuelta y forzar recarga de la vista de detalle
       router.replace(`/gasto/${gastoId}-cuota-${numeroCuota}`)
     } catch (error: any) {
-      console.error('Error registrando pago:', error)
       showAlert('Error', error.message || 'No se pudo registrar el pago')
     } finally {
       setGuardando(false)

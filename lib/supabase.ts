@@ -255,26 +255,19 @@ export function calcularMontosConDescuento(
 export const gastosService = {
   // Obtener gastos agrupados por cuota unificada
   async obtenerGastosCuotasUnificadas(userId: string, mes?: number, año?: number): Promise<GastoCuotaUnificada[]> {
-    console.log(`[DEBUG] Ejecutando obtenerGastosCuotasUnificadas para userId: ${userId}`);
-    console.log(`[DEBUG] Buscando gastos para mes: ${mes}, año: ${año}`);
-    
     // Usar la función RPC para obtener gastos compartidos correctamente
     const { data: gastosCompartidosTodos, error: errorCompartidos } = await supabase
       .rpc('obtener_gastos_compartidos', { usuario_actual_id: userId })
     
     if (errorCompartidos) {
-      console.error('Error al obtener gastos compartidos:', errorCompartidos);
       throw errorCompartidos;
     }
 
-    console.log(`[DEBUG] Gastos compartidos encontrados (sin filtrar): ${gastosCompartidosTodos?.length || 0}`);
-    
     // Filtrar gastos compartidos por mes y año si se especifica
     let gastosCompartidos = gastosCompartidosTodos || [];
     if (mes !== undefined && año !== undefined) {
       gastosCompartidos = gastosCompartidosTodos?.filter((gasto: any) => {
         if (!gasto.mi_vencimiento) {
-          console.log(`[DEBUG] Gasto compartido sin vencimiento excluido:`, gasto.gasto_id);
           return false;
         }
         // Usar componentes de fecha para evitar problemas de zona horaria
@@ -282,25 +275,8 @@ export const gastosService = {
         const añoVencimiento = parseInt(añoStr);
         const mesVencimiento = parseInt(mesStr);
         const incluir = mesVencimiento === mes && añoVencimiento === año;
-        console.log(`[DEBUG] Filtro RPC compartidos - Gasto ${gasto.gasto_id}: vencimiento=${gasto.mi_vencimiento}, mes=${mesVencimiento}, año=${añoVencimiento}, incluir=${incluir}`);
         return incluir;
       }) || [];
-    }
-
-    console.log(`[DEBUG] Gastos compartidos después del filtro: ${gastosCompartidos?.length || 0}`);
-    if (gastosCompartidos && gastosCompartidos.length > 0) {
-      console.log('[DEBUG] Detalles de gastos compartidos filtrados:');
-      gastosCompartidos.forEach((gasto: any, index: number) => {
-        console.log(`[DEBUG] Gasto ${index + 1}:`, {
-          gasto_id: gasto.gasto_id,
-          descripcion: gasto.descripcion,
-          mi_monto: gasto.mi_monto,
-          mi_vencimiento: gasto.mi_vencimiento,
-          creador_email: gasto.creador_email
-        });
-      });
-    } else {
-      console.log('[DEBUG] No se encontraron gastos compartidos para este usuario después del filtro');
     }
 
     // Consulta para gastos propios - obtener detalles directamente
@@ -321,9 +297,6 @@ export const gastosService = {
     if (mes !== undefined && año !== undefined) {
       const inicioMes = new Date(año, mes - 1, 1).toISOString().split('T')[0]
       const finMes = new Date(año, mes, 0).toISOString().split('T')[0] // Último día del mes actual
-      
-      console.log(`[DEBUG] Filtros de fecha - Mes: ${mes}, Año: ${año}`);
-      console.log(`[DEBUG] inicioMes: ${inicioMes}, finMes: ${finMes}`);
       
       queryPropio = queryPropio
         .gte('vencimiento', inicioMes)
@@ -380,7 +353,6 @@ export const gastosService = {
     const detallesCompartidosFiltrados = mes !== undefined && año !== undefined 
       ? detallesCompartidos.filter(detalle => {
           if (!detalle.vencimiento) {
-            console.log(`[DEBUG] Detalle sin vencimiento excluido:`, detalle.id);
             return false;
           }
           // Usar componentes de fecha para evitar problemas de zona horaria
@@ -388,7 +360,6 @@ export const gastosService = {
           const añoVencimiento = parseInt(añoStr);
           const mesVencimiento = parseInt(mesStr);
           const incluir = mesVencimiento === mes && añoVencimiento === año;
-          console.log(`[DEBUG] Filtro compartidos - Detalle ${detalle.id}: vencimiento=${detalle.vencimiento}, mes=${mesVencimiento}, año=${añoVencimiento}, incluir=${incluir}`);
           return incluir;
         })
       : detallesCompartidos
@@ -477,7 +448,6 @@ export const gastosService = {
           const añoVencimiento = parseInt(añoStr);
           const mesVencimiento = parseInt(mesStr);
           incluirCuota = mesVencimiento === mes && añoVencimiento === año
-          console.log(`[DEBUG] Filtro final cuota - ${claveGrupo}: vencimiento=${primerParticipante.vencimiento}, mes=${mesVencimiento}, año=${añoVencimiento}, incluir=${incluirCuota}`);
         }
       
       if (incluirCuota) {
@@ -551,9 +521,6 @@ export const gastosService = {
       const inicioMes = new Date(año, mes - 1, 1).toISOString().split('T')[0]
       const finMes = new Date(año, mes, 0).toISOString().split('T')[0] // Último día del mes actual
       
-      console.log(`[DEBUG] obtenerGastos - Filtros de fecha - Mes: ${mes}, Año: ${año}`);
-      console.log(`[DEBUG] obtenerGastos - inicioMes: ${inicioMes}, finMes: ${finMes}`);
-      
       queryPropio = queryPropio
         .gte('vencimiento', inicioMes)
         .lte('vencimiento', finMes)
@@ -623,21 +590,15 @@ export const gastosService = {
 
   // Obtener gastos donde el usuario participa pero no es el creador
   async obtenerGastosCompartidosComoParticipante(userId: string, mes?: number, año?: number): Promise<GastoCuotaUnificada[]> {
-    console.log('[DEBUG] Iniciando obtenerGastosCompartidosComoParticipante para userId:', userId)
-    console.log(`[DEBUG] Filtros - mes: ${mes}, año: ${año}`)
     try {
       // Usar la función RPC como respaldo si la consulta directa falla
-      console.log('[DEBUG] Intentando usar función RPC como método principal')
       const { data: gastosRPC, error: errorRPC } = await supabase.rpc('obtener_gastos_compartidos', {
         usuario_actual_id: userId
       })
       
       if (errorRPC) {
-        console.error('[DEBUG] Error en función RPC:', errorRPC)
         throw errorRPC
       }
-      
-      console.log('[DEBUG] Función RPC exitosa, gastos encontrados:', gastosRPC?.length || 0)
       
       if (!gastosRPC || gastosRPC.length === 0) {
         return []
@@ -647,14 +608,10 @@ export const gastosService = {
       // Aplicar filtro adicional como medida de seguridad para excluir gastos donde el usuario actual es el creador
       let gastosCompartidosComoParticipante = gastosRPC.filter((gasto: any) => gasto.creador_id !== userId)
       
-      console.log('[DEBUG] Gastos compartidos como participante (después del filtro):', gastosCompartidosComoParticipante.length)
-      console.log('[DEBUG] Gastos filtrados por ser creador:', gastosRPC.length - gastosCompartidosComoParticipante.length)
-      
       // Filtrar por mes y año si se especifica
       if (mes !== undefined && año !== undefined) {
         gastosCompartidosComoParticipante = gastosCompartidosComoParticipante.filter((gasto: any) => {
           if (!gasto.mi_vencimiento) {
-            console.log(`[DEBUG] Gasto compartido sin vencimiento excluido:`, gasto.gasto_id);
             return false;
           }
           // Usar componentes de fecha para evitar problemas de zona horaria
@@ -662,11 +619,8 @@ export const gastosService = {
           const añoVencimiento = parseInt(añoStr);
           const mesVencimiento = parseInt(mesStr);
           const incluir = mesVencimiento === mes && añoVencimiento === año;
-          console.log(`[DEBUG] Filtro participante - Gasto ${gasto.gasto_id}: vencimiento=${gasto.mi_vencimiento}, mes=${mesVencimiento}, año=${añoVencimiento}, incluir=${incluir}`);
           return incluir;
         });
-        
-        console.log(`[DEBUG] Gastos compartidos después del filtro de fecha: ${gastosCompartidosComoParticipante.length}`);
       }
       
       // Transformar los datos de la RPC al formato GastoCuotaUnificada
@@ -706,11 +660,8 @@ export const gastosService = {
         participantes: [] // La RPC no devuelve participantes detallados
       }))
       
-      console.log('[DEBUG] Gastos unificados finales:', gastosUnificados.length)
       return gastosUnificados
     } catch (error) {
-      console.error('[DEBUG] Error en obtenerGastosCompartidosComoParticipante:', error)
-      console.error('[DEBUG] Stack trace:', error instanceof Error ? error.stack : 'No stack trace')
       throw error
     }
   },
@@ -741,7 +692,6 @@ export const gastosService = {
       })
     
     if (error) {
-      console.error('Error en función RPC crear_gasto_completo:', error)
       throw error
     }
     
@@ -754,11 +704,11 @@ export const gastosService = {
     if (gasto.pagado && gasto.es_recurrente && resultado?.gasto_id) {
       try {
         const gastoRecurrente = await this.generarGastoRecurrente(resultado.gasto_id, userId)
-        if (gastoRecurrente.ya_existia) {
-          console.log('El gasto recurrente para el próximo mes ya existía')
-        } else {
-          console.log('Gasto recurrente generado automáticamente:', gastoRecurrente.id)
-        }
+        // if (gastoRecurrente.ya_existia) {
+        //   console.log('El gasto recurrente para el próximo mes ya existía')
+        // } else {
+        //   console.log('Gasto recurrente generado automáticamente:', gastoRecurrente.id)
+        // }
       } catch (error) {
         console.warn('Error al generar gasto recurrente automáticamente:', error)
         // No lanzamos el error para no interrumpir la creación del gasto principal
@@ -826,13 +776,11 @@ export const gastosService = {
     const gastoExistente = gastosExistentes && gastosExistentes.length > 0 ? gastosExistentes[0] : null
     
     if (existeError) {
-      console.error('Error verificando gasto existente:', existeError)
       // No lanzamos error, continuamos con la creación
     }
     
     // Si ya existe un gasto para esa fecha, no crear uno nuevo
     if (gastoExistente) {
-      console.log(`Ya existe un gasto recurrente para la fecha ${fechaProximaStr}:`, gastoExistente.id)
       return {
         id: gastoExistente.id,
         descripcion: gastoOriginal.descripcion,
@@ -878,7 +826,6 @@ export const gastosService = {
       })
     
     if (error) {
-      console.error('Error en función RPC crear_gasto_completo:', error)
       throw error
     }
     
@@ -1099,7 +1046,6 @@ export const pagosService = {
     });
 
     if (error) {
-      console.error('Error al obtener pagos:', error);
       throw error;
     }
 
@@ -1203,11 +1149,11 @@ export const pagosService = {
           try {
             // Usar el usuario_id del gasto original (creador) para generar el recurrente
             const gastoRecurrente = await gastosService.generarGastoRecurrente(detalle.gasto_id, detalle.gasto.usuario_id)
-            if (gastoRecurrente.ya_existia) {
-              console.log('El gasto recurrente para el próximo mes ya existía, no se creó uno nuevo')
-            } else {
-              console.log('Gasto recurrente generado tras completar pago:', gastoRecurrente.id)
-            }
+            // if (gastoRecurrente.ya_existia) {
+            //   console.log('El gasto recurrente para el próximo mes ya existía, no se creó uno nuevo')
+            // } else {
+            //   console.log('Gasto recurrente generado tras completar pago:', gastoRecurrente.id)
+            // }
           } catch (recurrenteError) {
             console.error('Error generando gasto recurrente:', recurrenteError)
             // No lanzamos el error para no afectar el pago principal
@@ -1336,8 +1282,6 @@ export const solicitudesPagoService = {
   // Aceptar una solicitud de pago
   async aceptarSolicitud(solicitudId: string, usuarioCreadorId: string) {
     try {
-      console.log('Aceptar solicitud:', solicitudId)
-
       const { data, error } = await supabase.rpc('aceptar_solicitud_pago', {
           solicitud_id_param: solicitudId
         })
@@ -1418,8 +1362,6 @@ export const resumenService = {
   // Obtener datos unificados para el resumen mensual
   async obtenerDatosResumenMensual(userId: string, mes?: number, año?: number): Promise<DatosResumenMensual> {
     try {
-      console.log(`[DEBUG] Obteniendo datos de resumen para userId: ${userId}, mes: ${mes}, año: ${año}`);
-      
       const { data, error } = await supabase
         .rpc('obtener_datos_resumen_mensual', {
           p_usuario_id: userId,
@@ -1445,7 +1387,6 @@ export const resumenService = {
         cantidad_detalles_adeudados: 0
       };
       
-      console.log('[DEBUG] Datos de resumen obtenidos:', resultado);
       return resultado as DatosResumenMensual;
     } catch (error) {
       console.error('Error en obtenerDatosResumenMensual:', error);
@@ -1456,8 +1397,6 @@ export const resumenService = {
   // Obtener gastos propios por pagar
   async obtenerGastosPorPagar(userId: string, mes?: number, año?: number): Promise<GastoPorPagar[]> {
     try {
-      console.log(`[DEBUG] Obteniendo gastos por pagar para userId: ${userId}, mes: ${mes}, año: ${año}`);
-      
       const { data, error } = await supabase
         .rpc('obtener_gastos_por_pagar', {
           p_usuario_id: userId,
@@ -1470,7 +1409,6 @@ export const resumenService = {
         throw error;
       }
       
-      console.log('[DEBUG] Gastos por pagar obtenidos:', data);
       return data || [];
     } catch (error) {
       console.error('Error en obtenerGastosPorPagar:', error);
@@ -1481,8 +1419,6 @@ export const resumenService = {
   // Obtener gastos que me adeudan
   async obtenerGastosAdeudados(userId: string, mes?: number, año?: number): Promise<GastoAdeudado[]> {
     try {
-      console.log(`[DEBUG] Obteniendo gastos adeudados para userId: ${userId}, mes: ${mes}, año: ${año}`);
-      
       const { data, error } = await supabase
         .rpc('obtener_gastos_adeudados', {
           p_usuario_id: userId,
@@ -1495,7 +1431,6 @@ export const resumenService = {
         throw error;
       }
       
-      console.log('[DEBUG] Gastos adeudados obtenidos:', data);
       return data || [];
     } catch (error) {
       console.error('Error en obtenerGastosAdeudados:', error);
