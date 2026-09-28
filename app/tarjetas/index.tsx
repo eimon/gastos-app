@@ -10,9 +10,16 @@ import type { Tarjeta } from '../../data/repositories/tarjetasRepo'
 function volver() {
   if (router.canGoBack()) {
     router.back()
-  } else {
-    router.replace('/')
+    return
   }
+  // No back history means this screen was reached via the temporary
+  // logged-out dev bypass (see app/_layout.tsx's `enTarjetas` check) —
+  // there's no session here to decide a safe destination, and replacing
+  // to '/' would briefly mount the (tabs) tree (which redirects to
+  // /gastos and fires legacy Supabase fetches) before the root layout
+  // flips back to LoginScreen. Simplest safe fix: no-op instead of
+  // navigating through that tree. This whole bypass is deleted in PR 4b,
+  // where a normal `router.back()` will always have real history.
 }
 
 export default function TarjetasScreen() {
