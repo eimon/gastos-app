@@ -17,6 +17,7 @@ import {
   Paragraph,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
+import { router } from 'expo-router'
 import { supabase } from '../lib/supabase'
 import { showAlert } from '../lib/alerts'
 
@@ -231,6 +232,10 @@ export default function LoginScreen() {
           <Paragraph style={styles.footerText}>
             Al continuar, aceptas nuestros términos y condiciones
           </Paragraph>
+          {/* TODO(offline-redesign PR 4b): remove when the login gate is removed. */}
+          <Button mode="text" onPress={() => router.push('/tarjetas')}>
+            Gestionar tarjetas (dev)
+          </Button>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -3,7 +3,7 @@
 import '../lib/polyfills'
 
 import { useEffect, useState } from 'react'
-import { Stack } from 'expo-router'
+import { Stack, usePathname } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { Provider as PaperProvider } from 'react-native-paper'
 import { supabase } from '../lib/supabase'
@@ -16,6 +16,12 @@ import { DatabaseProvider } from '../data/db/DatabaseProvider'
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const pathname = usePathname()
+  // TODO(offline-redesign PR 4b): remove this bypass along with the login
+  // gate itself. Tarjetas (PR 3) must be reachable while `LoginScreen` still
+  // blocks everything else, since the user has no working Supabase login —
+  // see components/LoginScreen.tsx's "Gestionar tarjetas (dev)" link.
+  const enTarjetas = pathname.startsWith('/tarjetas')
   // Bumped by DatabaseProvider's "Reintentar" action to force a fresh mount
   // (and therefore a fresh useMigrations attempt) after a migration error.
   const [intentoDb, setIntentoDb] = useState(0)
@@ -50,7 +56,7 @@ export default function RootLayout() {
     <PaperProvider>
       <StatusBar style="dark" />
       <DatabaseProvider key={intentoDb} onReintentar={() => setIntentoDb((intento) => intento + 1)}>
-        {!session ? (
+        {!session && !enTarjetas ? (
           <LoginScreen />
         ) : (
           <MonthProvider>

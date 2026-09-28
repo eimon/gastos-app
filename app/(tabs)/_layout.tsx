@@ -1,9 +1,9 @@
 // app/(tabs)/_layout.tsx - Layout de las tabs
 import React, { useState, useEffect } from 'react'
-import { Tabs } from 'expo-router'
+import { router, Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { View, StyleSheet, Image, TouchableOpacity } from 'react-native'
-import { showAlert, showConfirm } from '../../lib/alerts'
+import { showConfirm } from '../../lib/alerts'
 import { Menu, IconButton, Provider } from 'react-native-paper'
 import { supabase } from '../../lib/supabase'
 
@@ -21,7 +21,7 @@ function HeaderMenu() {
         if (user?.user_metadata?.picture) {
           setUserAvatar(user.user_metadata.picture)
         }
-      } catch (error) {
+      } catch {
         // Si hay error, no mostrar avatar
       }
     }
@@ -66,6 +66,14 @@ function HeaderMenu() {
         }
         contentStyle={styles.menuContent}
       >
+        <Menu.Item
+          onPress={() => {
+            closeMenu()
+            router.push('/tarjetas')
+          }}
+          title="Tarjetas"
+          leadingIcon="credit-card-outline"
+        />
         <Menu.Item
           onPress={handleLogout}
           title="Cerrar Sesión"
