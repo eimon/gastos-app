@@ -5,7 +5,15 @@ import * as schema from './schema';
 
 const DATABASE_NAME = 'gastos.db';
 
-export const expoDb = openDatabaseSync(DATABASE_NAME, { enableChangeListener: true });
+export const expoDb = openDatabaseSync(DATABASE_NAME);
+
+// SQLite disables foreign-key enforcement per-connection by default. Without
+// this pragma, every `.references()` in schema.ts is decorative only — SQLite
+// would silently accept an insert/update that violates a foreign key. Must
+// run before any other statement on this connection. This can't be exercised
+// in Jest (no native SQLite there); it's verified manually — see the Expo Go
+// checklist in the PR 2 apply-progress notes ("foreign keys enforced" step).
+expoDb.execSync('PRAGMA foreign_keys = ON;');
 
 export const db = drizzle(expoDb, { schema });
 
