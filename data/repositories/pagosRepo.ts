@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import type { Executor } from '../db/client';
 import { generarId } from '../db/ids';
@@ -36,9 +36,17 @@ export function registrar(exec: Executor, input: InputPago): Pago {
 }
 
 export function listarPorCuotaParticipante(exec: Executor, cuotaParticipanteId: string): Pago[] {
-  return exec.select().from(pagos).where(eq(pagos.cuotaParticipanteId, cuotaParticipanteId)).all();
+  return exec
+    .select()
+    .from(pagos)
+    .where(and(eq(pagos.cuotaParticipanteId, cuotaParticipanteId), isNull(pagos.deletedAt)))
+    .all();
 }
 
 export function listarPorDeudaCuota(exec: Executor, deudaCuotaId: string): Pago[] {
-  return exec.select().from(pagos).where(eq(pagos.deudaCuotaId, deudaCuotaId)).all();
+  return exec
+    .select()
+    .from(pagos)
+    .where(and(eq(pagos.deudaCuotaId, deudaCuotaId), isNull(pagos.deletedAt)))
+    .all();
 }

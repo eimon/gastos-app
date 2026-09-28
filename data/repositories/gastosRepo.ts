@@ -1,4 +1,4 @@
-import { asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import type { Executor } from '../db/client';
 import { generarId } from '../db/ids';
@@ -170,7 +170,11 @@ export function listar(exec: Executor): Gasto[] {
 }
 
 export function obtenerConDetalle(exec: Executor, id: string): GastoConDetalle | undefined {
-  const gasto = exec.select().from(gastos).where(eq(gastos.id, id)).get();
+  const gasto = exec
+    .select()
+    .from(gastos)
+    .where(and(eq(gastos.id, id), isNull(gastos.deletedAt)))
+    .get();
   if (!gasto) {
     return undefined;
   }
@@ -206,14 +210,14 @@ export function actualizarDescripcion(exec: Executor, id: string, descripcion: s
     .run();
 }
 
-/** Gates `gastosService.editar`: amount/cuotas/participantes lock once any pago exists. */
+/** Gates `gastosService.editar`: amount/cuotas/participantes lock once any (non-deleted) pago exists. */
 export function tieneAlgunPago(exec: Executor, gastoId: string): boolean {
   const filas = exec
     .select({ id: pagos.id })
     .from(pagos)
     .innerJoin(cuotaParticipantes, eq(pagos.cuotaParticipanteId, cuotaParticipantes.id))
     .innerJoin(gastoCuotas, eq(cuotaParticipantes.gastoCuotaId, gastoCuotas.id))
-    .where(eq(gastoCuotas.gastoId, gastoId))
+    .where(and(eq(gastoCuotas.gastoId, gastoId), isNull(pagos.deletedAt)))
     .limit(1)
     .all();
 

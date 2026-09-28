@@ -1,4 +1,4 @@
-import { asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 
 import type { Executor } from '../db/client';
 import { generarId } from '../db/ids';
@@ -66,7 +66,11 @@ export function listar(exec: Executor): Deuda[] {
 }
 
 export function obtenerConCuotas(exec: Executor, id: string): DeudaConCuotas | undefined {
-  const deuda = exec.select().from(deudas).where(eq(deudas.id, id)).get();
+  const deuda = exec
+    .select()
+    .from(deudas)
+    .where(and(eq(deudas.id, id), isNull(deudas.deletedAt)))
+    .get();
   if (!deuda) {
     return undefined;
   }
