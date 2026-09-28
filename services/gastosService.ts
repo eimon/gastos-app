@@ -2,7 +2,7 @@ import type { Centavos } from '../domain/dinero';
 import type { TipoDescuento } from '../domain/cuotas';
 import { planificarGasto, type InputGasto, type TipoGasto } from '../domain/gasto';
 import type { FechaISO } from '../domain/vencimientos';
-import { db } from '../data/db/client';
+import { db, type Executor } from '../data/db/client';
 import * as gastosRepo from '../data/repositories/gastosRepo';
 import * as tarjetasRepo from '../data/repositories/tarjetasRepo';
 import { emitirCambio } from './cambios';
@@ -23,15 +23,39 @@ export interface InputCrearGasto {
   nombreUsuario?: string;
 }
 
-/** Throws when the tarjetaId doesn't resolve to an active-or-archived card. */
-function resolverTarjeta(tarjetaId: string | null): InputGasto['tarjeta'] {
+/** Throws when the tarjetaId doesn't resolve to any card at all (archived or not). */
+function resolverTarjeta(exec: Executor, tarjetaId: string | null): InputGasto['tarjeta'] {
   if (!tarjetaId) {
     return null;
   }
 
-  const tarjeta = tarjetasRepo.obtener(db, tarjetaId);
+  const tarjeta = tarjetasRepo.obtener(exec, tarjetaId);
   if (!tarjeta) {
     throw new Error('Tarjeta no encontrada.');
+  }
+
+  return { id: tarjeta.id, diaCierre: tarjeta.diaCierre, diaVencimiento: tarjeta.diaVencimiento };
+}
+
+/**
+ * Same as `resolverTarjeta`, but additionally rejects an archived card.
+ * Archived cards are hidden from the picker for NEW gastos (spec: Archiving
+ * Replaces Deletion) — only `crear` uses this. `editar` uses the plain
+ * `resolverTarjeta` instead, since a gasto that already references a
+ * since-archived card must keep working (its existing cuota due dates stay
+ * unchanged regardless of the card's archived state).
+ */
+function resolverTarjetaParaCrear(exec: Executor, tarjetaId: string | null): InputGasto['tarjeta'] {
+  if (!tarjetaId) {
+    return null;
+  }
+
+  const tarjeta = tarjetasRepo.obtener(exec, tarjetaId);
+  if (!tarjeta) {
+    throw new Error('Tarjeta no encontrada.');
+  }
+  if (tarjeta.deletedAt) {
+    throw new Error('La tarjeta seleccionada está archivada.');
   }
 
   return { id: tarjeta.id, diaCierre: tarjeta.diaCierre, diaVencimiento: tarjeta.diaVencimiento };
@@ -51,7 +75,7 @@ export async function crear(input: InputCrearGasto): Promise<gastosRepo.GastoCon
     descuentoCents: input.descuentoCents,
     tipoDescuento: input.tipoDescuento,
     cuotas: input.cuotas,
-    tarjeta: resolverTarjeta(input.tarjetaId),
+    tarjeta: resolverTarjetaParaCrear(db, input.tarjetaId),
     participantes: input.tipo === 'compartido' ? input.participantes : [],
   });
 
@@ -124,51 +148,59 @@ export async function editar(id: string, input: InputEditarGasto): Promise<void>
     return;
   }
 
-  if (gastosRepo.tieneAlgunPago(db, id)) {
-    const error: Error & { code?: ErrorEditarGasto } = new Error(
-      'No se puede editar el monto, las cuotas ni los participantes: ya hay pagos registrados.',
-    );
-    error.code = 'BLOQUEADO_POR_PAGO';
-    throw error;
-  }
+  // The tieneAlgunPago check, the current-state read and the write all run
+  // INSIDE this one transaction (matching pagosService.registrar's pattern)
+  // so the decision to allow the edit and the edit itself see the same
+  // transactional snapshot — no other write can land between the check and
+  // the write.
+  db.transaction((tx) => {
+    if (gastosRepo.tieneAlgunPago(tx, id)) {
+      const error: Error & { code?: ErrorEditarGasto } = new Error(
+        'No se puede editar el monto, las cuotas ni los participantes: ya hay pagos registrados.',
+      );
+      error.code = 'BLOQUEADO_POR_PAGO';
+      throw error;
+    }
 
-  const actual = gastosRepo.obtenerConDetalle(db, id);
-  if (!actual) {
-    const error: Error & { code?: ErrorEditarGasto } = new Error('Gasto no encontrado.');
-    error.code = 'GASTO_NO_ENCONTRADO';
-    throw error;
-  }
+    const actual = gastosRepo.obtenerConDetalle(tx, id);
+    if (!actual) {
+      const error: Error & { code?: ErrorEditarGasto } = new Error('Gasto no encontrado.');
+      error.code = 'GASTO_NO_ENCONTRADO';
+      throw error;
+    }
 
-  const montoTotalCents = input.montoTotalCents ?? actual.gasto.montoTotalCents;
-  const descuentoCents = input.descuentoCents ?? actual.gasto.descuentoCents;
-  const tipoDescuento = input.tipoDescuento !== undefined ? input.tipoDescuento : (actual.gasto.tipoDescuento as TipoDescuento | null);
-  const cuotasCount = input.cuotas ?? actual.gasto.cantidadCuotas;
-  const tarjetaId = input.tarjetaId !== undefined ? input.tarjetaId : actual.gasto.tarjetaId;
-  const tipo = actual.gasto.tipo as TipoGasto;
-  const nombresParticipantes =
-    input.participantes ?? actual.participantes.filter((p) => !p.esUsuario).map((p) => p.nombre);
-  const nombreUsuario = actual.participantes.find((p) => p.esUsuario)?.nombre ?? NOMBRE_USUARIO_POR_DEFECTO;
+    const montoTotalCents = input.montoTotalCents ?? actual.gasto.montoTotalCents;
+    const descuentoCents = input.descuentoCents ?? actual.gasto.descuentoCents;
+    const tipoDescuento =
+      input.tipoDescuento !== undefined ? input.tipoDescuento : (actual.gasto.tipoDescuento as TipoDescuento | null);
+    const cuotasCount = input.cuotas ?? actual.gasto.cantidadCuotas;
+    const tarjetaId = input.tarjetaId !== undefined ? input.tarjetaId : actual.gasto.tarjetaId;
+    const tipo = actual.gasto.tipo as TipoGasto;
+    const nombresParticipantes =
+      input.participantes ?? actual.participantes.filter((p) => !p.esUsuario).map((p) => p.nombre);
+    const nombreUsuario = actual.participantes.find((p) => p.esUsuario)?.nombre ?? NOMBRE_USUARIO_POR_DEFECTO;
 
-  const plan = planificarGasto({
-    tipo,
-    fechaCompra: actual.gasto.fechaCompra,
-    montoTotalCents,
-    descuentoCents,
-    tipoDescuento,
-    cuotas: cuotasCount,
-    tarjeta: resolverTarjeta(tarjetaId),
-    participantes: tipo === 'compartido' ? nombresParticipantes : [],
-  });
+    const plan = planificarGasto({
+      tipo,
+      fechaCompra: actual.gasto.fechaCompra,
+      montoTotalCents,
+      descuentoCents,
+      tipoDescuento,
+      cuotas: cuotasCount,
+      // Plain resolverTarjeta (not resolverTarjetaParaCrear): a gasto that
+      // already references a since-archived card must keep working.
+      tarjeta: resolverTarjeta(tx, tarjetaId),
+      participantes: tipo === 'compartido' ? nombresParticipantes : [],
+    });
 
-  const participantes = construirParticipantes({
-    tipo,
-    participantes: nombresParticipantes,
-    nombreUsuario,
-  });
-  const cuotas = construirCuotasRepo(plan, participantes.length);
+    const participantes = construirParticipantes({
+      tipo,
+      participantes: nombresParticipantes,
+      nombreUsuario,
+    });
+    const cuotas = construirCuotasRepo(plan, participantes.length);
 
-  db.transaction((tx) =>
-    gastosRepo.actualizarCompleto(tx, id, {
+    return gastosRepo.actualizarCompleto(tx, id, {
       descripcion: input.descripcion,
       fechaCompra: actual.gasto.fechaCompra,
       tipo,
@@ -179,8 +211,8 @@ export async function editar(id: string, input: InputEditarGasto): Promise<void>
       tarjetaId,
       participantes,
       cuotas,
-    }),
-  );
+    });
+  });
 
   emitirCambio();
 }
