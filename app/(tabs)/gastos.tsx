@@ -23,9 +23,8 @@ import {
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase, gastosService, solicitudesPagoService, Gasto, GastoCuotaUnificada, TipoGasto, SolicitudPagoCreate } from '../../lib/supabase'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { showAlert, showConfirm } from '../../lib/alerts'
-import { useFocusEffect } from '@react-navigation/native'
 import RecurringIcon from '../../components/RecurringIcon'
 import { useMonth } from '../../contexts/MonthContext'
 

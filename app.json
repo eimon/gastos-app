@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -50,7 +45,17 @@
       "expo-router",
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-image",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-status-bar"
     ],
     "scheme": "gastos-app",
     "extra": {

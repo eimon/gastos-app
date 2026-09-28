@@ -20,7 +20,7 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { supabase, gastosService, pagosService, resumenService, Gasto, Pago, TipoGasto, DatosResumenMensual, GastoPorPagar, GastoAdeudado } from '../../lib/supabase'
 import { showAlert } from '../../lib/alerts'
-import { useFocusEffect } from '@react-navigation/native'
+import { useFocusEffect } from 'expo-router'
 import { PieChart } from 'react-native-chart-kit'
 import { useMonth } from '../../contexts/MonthContext'
 
