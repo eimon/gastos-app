@@ -16,7 +16,10 @@ export interface ResumenPago {
 export function estadoDePago(monto: Centavos, pagos: Centavos[]): ResumenPago {
   const pagado = pagos.reduce((acc, pago) => acc + pago, 0);
   const restante = monto - pagado;
-  const estado: EstadoPago = pagado === 0 ? 'pendiente' : restante <= 0 ? 'pagado' : 'parcial';
+  // Check `restante <= 0` FIRST: a monto of 0 (e.g. a prorrateo cuota fully
+  // consumed by a discount) has no payments yet (`pagado === 0`) but is
+  // already settled — it must resolve to 'pagado', never 'pendiente'.
+  const estado: EstadoPago = restante <= 0 ? 'pagado' : pagado === 0 ? 'pendiente' : 'parcial';
   return { pagado, restante, estado };
 }
 

@@ -31,4 +31,11 @@ describe('estadoDePago', () => {
     expect(cuota2.estado).toBe('parcial');
     expect(cuota2.restante).toBe(5_000_00);
   });
+
+  test('a monto of 0 (e.g. a prorrateo cuota fully consumed by the discount) is immediately pagado', () => {
+    const resumen = estadoDePago(0, []);
+    expect(resumen.estado).toBe('pagado');
+    expect(resumen.restante).toBe(0);
+    expect(resumen.pagado).toBe(0);
+  });
 });
