@@ -24,11 +24,21 @@ function volver() {
 
 export default function TarjetasScreen() {
   const { datos: tarjetas, cargando, error } = useServicio(tarjetasService.listar)
+  // False only when this screen was reached via the temporary logged-out
+  // dev bypass (see app/_layout.tsx's `enTarjetas` check), which mounts the
+  // root Stack fresh at this exact path with no history. volver() already
+  // no-ops in that case, but a back button that visibly does nothing is a
+  // dead end for the user — hide it instead. The Android hardware back
+  // button still exits the app normally, which is acceptable until PR 4b
+  // removes this whole bypass and canGoBack() is always true here.
+  // TODO(offline-redesign PR 4b): remove this check along with volver()'s
+  // no-op branch once the bypass is gone.
+  const puedeVolver = router.canGoBack()
 
   return (
     <View style={styles.container}>
       <Appbar.Header>
-        <Appbar.BackAction onPress={volver} />
+        {puedeVolver && <Appbar.BackAction onPress={volver} />}
         <Appbar.Content title="Tarjetas" />
       </Appbar.Header>
 
