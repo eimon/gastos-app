@@ -54,7 +54,8 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-sqlite"
     ],
     "scheme": "gastos-app",
     "extra": {
