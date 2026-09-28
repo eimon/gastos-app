@@ -6,7 +6,7 @@
  * hard DELETE). See `sdd/offline-redesign/design` for the full rationale.
  */
 import { sql } from 'drizzle-orm';
-import { check, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
+import { check, index, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
 
 const auditColumns = {
   createdAt: text('created_at')
@@ -59,6 +59,7 @@ export const gastos = sqliteTable(
       'gastos_descuento_check',
       sql`${t.descuentoCents} >= 0 AND ${t.descuentoCents} < ${t.montoTotalCents}`,
     ),
+    index('gastos_tarjeta_id_idx').on(t.tarjetaId),
   ],
 );
 
@@ -75,19 +76,28 @@ export const gastoCuotas = sqliteTable(
     fechaVencimiento: text('fecha_vencimiento').notNull(),
     ...auditColumns,
   },
-  (t) => [unique('gasto_cuotas_gasto_numero_unique').on(t.gastoId, t.numero)],
+  (t) => [
+    unique('gasto_cuotas_gasto_numero_unique').on(t.gastoId, t.numero),
+    // gasto_id lookups are already covered by the unique index above (as its
+    // leftmost column) — only fecha_vencimiento needs its own index here.
+    index('gasto_cuotas_fecha_vencimiento_idx').on(t.fechaVencimiento),
+  ],
 );
 
-export const gastoParticipantes = sqliteTable('gasto_participantes', {
-  id: text('id').primaryKey(),
-  gastoId: text('gasto_id')
-    .notNull()
-    .references(() => gastos.id),
-  nombre: text('nombre').notNull(),
-  esUsuario: integer('es_usuario', { mode: 'boolean' }).notNull().default(false),
-  orden: integer('orden').notNull(),
-  ...auditColumns,
-});
+export const gastoParticipantes = sqliteTable(
+  'gasto_participantes',
+  {
+    id: text('id').primaryKey(),
+    gastoId: text('gasto_id')
+      .notNull()
+      .references(() => gastos.id),
+    nombre: text('nombre').notNull(),
+    esUsuario: integer('es_usuario', { mode: 'boolean' }).notNull().default(false),
+    orden: integer('orden').notNull(),
+    ...auditColumns,
+  },
+  (t) => [index('gasto_participantes_gasto_id_idx').on(t.gastoId)],
+);
 
 export const cuotaParticipantes = sqliteTable(
   'cuota_participantes',
@@ -102,7 +112,11 @@ export const cuotaParticipantes = sqliteTable(
     montoCents: integer('monto_cents').notNull(),
     ...auditColumns,
   },
-  (t) => [check('cuota_participantes_monto_check', sql`${t.montoCents} >= 0`)],
+  (t) => [
+    check('cuota_participantes_monto_check', sql`${t.montoCents} >= 0`),
+    index('cuota_participantes_gasto_cuota_id_idx').on(t.gastoCuotaId),
+    index('cuota_participantes_participante_id_idx').on(t.participanteId),
+  ],
 );
 
 export const deudas = sqliteTable(
@@ -131,7 +145,12 @@ export const deudaCuotas = sqliteTable(
     fechaVencimiento: text('fecha_vencimiento').notNull(),
     ...auditColumns,
   },
-  (t) => [unique('deuda_cuotas_deuda_numero_unique').on(t.deudaId, t.numero)],
+  (t) => [
+    unique('deuda_cuotas_deuda_numero_unique').on(t.deudaId, t.numero),
+    // deuda_id lookups are already covered by the unique index above (as its
+    // leftmost column) — only fecha_vencimiento needs its own index here.
+    index('deuda_cuotas_fecha_vencimiento_idx').on(t.fechaVencimiento),
+  ],
 );
 
 export const pagos = sqliteTable(
@@ -152,5 +171,7 @@ export const pagos = sqliteTable(
       'pagos_exactly_one_target_check',
       sql`(${t.cuotaParticipanteId} IS NOT NULL AND ${t.deudaCuotaId} IS NULL) OR (${t.cuotaParticipanteId} IS NULL AND ${t.deudaCuotaId} IS NOT NULL)`,
     ),
+    index('pagos_cuota_participante_id_idx').on(t.cuotaParticipanteId),
+    index('pagos_deuda_cuota_id_idx').on(t.deudaCuotaId),
   ],
 );

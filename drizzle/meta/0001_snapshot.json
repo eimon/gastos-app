@@ -1,0 +1,831 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "6adb0b8c-47ee-4d37-aae1-deac7fd356f4",
+  "prevId": "bee32b04-aefd-4825-a4cc-648e36ff0192",
+  "tables": {
+    "cuota_participantes": {
+      "name": "cuota_participantes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gasto_cuota_id": {
+          "name": "gasto_cuota_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "participante_id": {
+          "name": "participante_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monto_cents": {
+          "name": "monto_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "cuota_participantes_gasto_cuota_id_idx": {
+          "name": "cuota_participantes_gasto_cuota_id_idx",
+          "columns": [
+            "gasto_cuota_id"
+          ],
+          "isUnique": false
+        },
+        "cuota_participantes_participante_id_idx": {
+          "name": "cuota_participantes_participante_id_idx",
+          "columns": [
+            "participante_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "cuota_participantes_gasto_cuota_id_gasto_cuotas_id_fk": {
+          "name": "cuota_participantes_gasto_cuota_id_gasto_cuotas_id_fk",
+          "tableFrom": "cuota_participantes",
+          "tableTo": "gasto_cuotas",
+          "columnsFrom": [
+            "gasto_cuota_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cuota_participantes_participante_id_gasto_participantes_id_fk": {
+          "name": "cuota_participantes_participante_id_gasto_participantes_id_fk",
+          "tableFrom": "cuota_participantes",
+          "tableTo": "gasto_participantes",
+          "columnsFrom": [
+            "participante_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cuota_participantes_monto_check": {
+          "name": "cuota_participantes_monto_check",
+          "value": "\"cuota_participantes\".\"monto_cents\" >= 0"
+        }
+      }
+    },
+    "deuda_cuotas": {
+      "name": "deuda_cuotas",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deuda_id": {
+          "name": "deuda_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "numero": {
+          "name": "numero",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monto_cents": {
+          "name": "monto_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fecha_vencimiento": {
+          "name": "fecha_vencimiento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "deuda_cuotas_fecha_vencimiento_idx": {
+          "name": "deuda_cuotas_fecha_vencimiento_idx",
+          "columns": [
+            "fecha_vencimiento"
+          ],
+          "isUnique": false
+        },
+        "deuda_cuotas_deuda_numero_unique": {
+          "name": "deuda_cuotas_deuda_numero_unique",
+          "columns": [
+            "deuda_id",
+            "numero"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "deuda_cuotas_deuda_id_deudas_id_fk": {
+          "name": "deuda_cuotas_deuda_id_deudas_id_fk",
+          "tableFrom": "deuda_cuotas",
+          "tableTo": "deudas",
+          "columnsFrom": [
+            "deuda_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "deudas": {
+      "name": "deudas",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "acreedor": {
+          "name": "acreedor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "descripcion": {
+          "name": "descripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monto_total_cents": {
+          "name": "monto_total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cantidad_cuotas": {
+          "name": "cantidad_cuotas",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fecha_primer_pago": {
+          "name": "fecha_primer_pago",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "deudas_monto_check": {
+          "name": "deudas_monto_check",
+          "value": "\"deudas\".\"monto_total_cents\" > 0"
+        }
+      }
+    },
+    "gasto_cuotas": {
+      "name": "gasto_cuotas",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gasto_id": {
+          "name": "gasto_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "numero": {
+          "name": "numero",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monto_cents": {
+          "name": "monto_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fecha_cierre": {
+          "name": "fecha_cierre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fecha_vencimiento": {
+          "name": "fecha_vencimiento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "gasto_cuotas_fecha_vencimiento_idx": {
+          "name": "gasto_cuotas_fecha_vencimiento_idx",
+          "columns": [
+            "fecha_vencimiento"
+          ],
+          "isUnique": false
+        },
+        "gasto_cuotas_gasto_numero_unique": {
+          "name": "gasto_cuotas_gasto_numero_unique",
+          "columns": [
+            "gasto_id",
+            "numero"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "gasto_cuotas_gasto_id_gastos_id_fk": {
+          "name": "gasto_cuotas_gasto_id_gastos_id_fk",
+          "tableFrom": "gasto_cuotas",
+          "tableTo": "gastos",
+          "columnsFrom": [
+            "gasto_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "gasto_participantes": {
+      "name": "gasto_participantes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gasto_id": {
+          "name": "gasto_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "nombre": {
+          "name": "nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "es_usuario": {
+          "name": "es_usuario",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "orden": {
+          "name": "orden",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "gasto_participantes_gasto_id_idx": {
+          "name": "gasto_participantes_gasto_id_idx",
+          "columns": [
+            "gasto_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "gasto_participantes_gasto_id_gastos_id_fk": {
+          "name": "gasto_participantes_gasto_id_gastos_id_fk",
+          "tableFrom": "gasto_participantes",
+          "tableTo": "gastos",
+          "columnsFrom": [
+            "gasto_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "gastos": {
+      "name": "gastos",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "descripcion": {
+          "name": "descripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fecha_compra": {
+          "name": "fecha_compra",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monto_total_cents": {
+          "name": "monto_total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "descuento_cents": {
+          "name": "descuento_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "tipo_descuento": {
+          "name": "tipo_descuento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cantidad_cuotas": {
+          "name": "cantidad_cuotas",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tarjeta_id": {
+          "name": "tarjeta_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "gastos_tarjeta_id_idx": {
+          "name": "gastos_tarjeta_id_idx",
+          "columns": [
+            "tarjeta_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "gastos_tarjeta_id_tarjetas_id_fk": {
+          "name": "gastos_tarjeta_id_tarjetas_id_fk",
+          "tableFrom": "gastos",
+          "tableTo": "tarjetas",
+          "columnsFrom": [
+            "tarjeta_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "gastos_tarjeta_requerida_check": {
+          "name": "gastos_tarjeta_requerida_check",
+          "value": "\"gastos\".\"cantidad_cuotas\" = 1 OR \"gastos\".\"tarjeta_id\" IS NOT NULL"
+        },
+        "gastos_descuento_check": {
+          "name": "gastos_descuento_check",
+          "value": "\"gastos\".\"descuento_cents\" >= 0 AND \"gastos\".\"descuento_cents\" < \"gastos\".\"monto_total_cents\""
+        }
+      }
+    },
+    "pagos": {
+      "name": "pagos",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cuota_participante_id": {
+          "name": "cuota_participante_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deuda_cuota_id": {
+          "name": "deuda_cuota_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "monto_cents": {
+          "name": "monto_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "medio_pago": {
+          "name": "medio_pago",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fecha": {
+          "name": "fecha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notas": {
+          "name": "notas",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "pagos_cuota_participante_id_idx": {
+          "name": "pagos_cuota_participante_id_idx",
+          "columns": [
+            "cuota_participante_id"
+          ],
+          "isUnique": false
+        },
+        "pagos_deuda_cuota_id_idx": {
+          "name": "pagos_deuda_cuota_id_idx",
+          "columns": [
+            "deuda_cuota_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "pagos_cuota_participante_id_cuota_participantes_id_fk": {
+          "name": "pagos_cuota_participante_id_cuota_participantes_id_fk",
+          "tableFrom": "pagos",
+          "tableTo": "cuota_participantes",
+          "columnsFrom": [
+            "cuota_participante_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "pagos_deuda_cuota_id_deuda_cuotas_id_fk": {
+          "name": "pagos_deuda_cuota_id_deuda_cuotas_id_fk",
+          "tableFrom": "pagos",
+          "tableTo": "deuda_cuotas",
+          "columnsFrom": [
+            "deuda_cuota_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "pagos_monto_check": {
+          "name": "pagos_monto_check",
+          "value": "\"pagos\".\"monto_cents\" > 0"
+        },
+        "pagos_exactly_one_target_check": {
+          "name": "pagos_exactly_one_target_check",
+          "value": "(\"pagos\".\"cuota_participante_id\" IS NOT NULL AND \"pagos\".\"deuda_cuota_id\" IS NULL) OR (\"pagos\".\"cuota_participante_id\" IS NULL AND \"pagos\".\"deuda_cuota_id\" IS NOT NULL)"
+        }
+      }
+    },
+    "tarjetas": {
+      "name": "tarjetas",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "nombre": {
+          "name": "nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dia_cierre": {
+          "name": "dia_cierre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dia_vencimiento": {
+          "name": "dia_vencimiento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(current_timestamp)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tarjetas_dia_cierre_check": {
+          "name": "tarjetas_dia_cierre_check",
+          "value": "\"tarjetas\".\"dia_cierre\" >= 1 AND \"tarjetas\".\"dia_cierre\" <= 31"
+        },
+        "tarjetas_dia_vencimiento_check": {
+          "name": "tarjetas_dia_vencimiento_check",
+          "value": "\"tarjetas\".\"dia_vencimiento\" >= 1 AND \"tarjetas\".\"dia_vencimiento\" <= 31"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

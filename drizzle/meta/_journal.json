@@ -8,6 +8,13 @@
       "when": 1790574478887,
       "tag": "0000_wandering_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790576488338,
+      "tag": "0001_ambitious_sasquatch",
+      "breakpoints": true
     }
   ]
 }
