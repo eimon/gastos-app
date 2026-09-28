@@ -22,6 +22,7 @@ export default function EditarTarjetaScreen() {
   const [valores, setValores] = useState<ValoresTarjetaForm>(valoresVacios)
   const [errores, setErrores] = useState<ErrorTarjeta[]>([])
   const [guardando, setGuardando] = useState(false)
+  const [archivando, setArchivando] = useState(false)
   // Tracks which tarjeta.id the form was last populated from. Setting state
   // directly in the render body (not an effect) is the documented React
   // pattern for "adjust state when a prop/query result changes" — this
@@ -69,8 +70,15 @@ export default function EditarTarjetaScreen() {
       'Archivar tarjeta',
       'La tarjeta dejará de aparecer al crear nuevos gastos. Los gastos que ya la usan mantienen sus fechas de vencimiento sin cambios.',
       async () => {
-        await tarjetasService.archivar(id)
-        router.back()
+        setArchivando(true)
+        try {
+          await tarjetasService.archivar(id)
+          router.back()
+        } catch (err) {
+          showAlert('Error', err instanceof Error ? err.message : 'No se pudo archivar la tarjeta')
+        } finally {
+          setArchivando(false)
+        }
       },
     )
   }
@@ -117,7 +125,15 @@ export default function EditarTarjetaScreen() {
         onGuardar={guardar}
       />
       {!tarjeta.deletedAt && (
-        <Button mode="outlined" textColor="#f44336" icon="archive" onPress={archivar} style={styles.archivar}>
+        <Button
+          mode="outlined"
+          textColor="#f44336"
+          icon="archive"
+          onPress={archivar}
+          loading={archivando}
+          disabled={archivando}
+          style={styles.archivar}
+        >
           Archivar tarjeta
         </Button>
       )}
