@@ -70,8 +70,10 @@ export default function GastoDetalleScreen() {
       // Parsear el ID que viene en formato: gasto_id-cuota-numero_cuota
       const parts = id.split('-cuota-')
       if (parts.length === 2) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(offline-redesign PR 4a): legacy code, rebuilt in PR 4a
         setGastoId(parts[0])
         setNumeroCuota(parseInt(parts[1]))
+        // eslint-disable-next-line react-hooks/immutability -- TODO(offline-redesign PR 4a): legacy code, rebuilt in PR 4a
         cargarGastoDetalle(parts[0], parseInt(parts[1]))
       }
     }

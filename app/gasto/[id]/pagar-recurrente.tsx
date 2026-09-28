@@ -44,8 +44,10 @@ export default function PagarRecurrenteScreen() {
       if (partes.length === 2) {
         const gastoIdParsed = partes[0]
         const numeroCuotaParsed = parseInt(partes[1])
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(offline-redesign PR 7a): legacy code, deleted in PR 7a
         setGastoId(gastoIdParsed)
         setNumeroCuota(numeroCuotaParsed)
+        // eslint-disable-next-line react-hooks/immutability -- TODO(offline-redesign PR 7a): legacy code, deleted in PR 7a
         cargarGastoDetalle(gastoIdParsed, numeroCuotaParsed)
       }
     }

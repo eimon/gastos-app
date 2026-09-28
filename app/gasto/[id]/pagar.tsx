@@ -45,8 +45,10 @@ export default function PagarGastoScreen() {
       if (partes.length === 2) {
         const gastoIdParsed = partes[0]
         const numeroCuotaParsed = parseInt(partes[1])
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(offline-redesign PR 4b): legacy code, rewritten in PR 4b
         setGastoId(gastoIdParsed)
         setNumeroCuota(numeroCuotaParsed)
+        // eslint-disable-next-line react-hooks/immutability -- TODO(offline-redesign PR 4b): legacy code, rewritten in PR 4b
         cargarGastoDetalle(gastoIdParsed, numeroCuotaParsed)
       }
     }

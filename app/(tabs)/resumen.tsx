@@ -69,6 +69,7 @@ export default function ResumenScreen() {
   const { mesActual, añoActual, navegarMesAnterior, navegarMesSiguiente, irMesActual } = useMonth()
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability -- TODO(offline-redesign PR 4b): legacy code, replaced by a "coming soon" placeholder in PR 4b
     cargarDatos()
   }, [mesActual, añoActual])
 

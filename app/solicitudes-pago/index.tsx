@@ -28,6 +28,7 @@ export default function SolicitudesPagoScreen() {
   const [vistaActual, setVistaActual] = useState<'recibidas' | 'enviadas'>('recibidas')
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability -- TODO(offline-redesign PR 7a): legacy code, deleted in PR 7a
     cargarSolicitudes()
   }, [])
 

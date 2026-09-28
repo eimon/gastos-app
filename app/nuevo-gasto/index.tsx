@@ -90,6 +90,7 @@ export default function NuevoGastoScreen() {
   useEffect(() => {
     // Agregar al usuario actual como participante tanto para gasto personal como compartido
     if (participantes.length === 0) {
+      // eslint-disable-next-line react-hooks/immutability -- TODO(offline-redesign PR 4a): legacy code, rebuilt in PR 4a
       agregarUsuarioActual()
     }
   }, [tipo])
@@ -97,6 +98,7 @@ export default function NuevoGastoScreen() {
   useEffect(() => {
     // Resetear esRecurrente cuando hay más de una cuota
     if ((cuotas || 1) > 1 && esRecurrente) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(offline-redesign PR 4a): legacy code, rebuilt in PR 4a
       setEsRecurrente(false)
     }
   }, [cuotas])
@@ -279,6 +281,7 @@ export default function NuevoGastoScreen() {
     }
 
     const participante: ParticipanteForm = {
+      // eslint-disable-next-line react-hooks/purity -- TODO(offline-redesign PR 4a): legacy code, rebuilt in PR 4a
       tempId: Date.now().toString(),
       ...participanteData
     }
@@ -301,6 +304,7 @@ export default function NuevoGastoScreen() {
     }
 
     const participante: ParticipanteForm = {
+      // eslint-disable-next-line react-hooks/purity -- TODO(offline-redesign PR 4a): legacy code, rebuilt in PR 4a
       tempId: Date.now().toString(),
       ...participanteData
     }
@@ -323,6 +327,7 @@ export default function NuevoGastoScreen() {
     }
 
     const participante: ParticipanteForm = {
+      // eslint-disable-next-line react-hooks/purity -- TODO(offline-redesign PR 4a): legacy code, rebuilt in PR 4a
       tempId: Date.now().toString(),
       ...participanteData
     }

@@ -46,6 +46,7 @@ export default function GastosScreen() {
   // Recargar datos cada vez que se enfoque la pestaña o cambien mes/año
   useFocusEffect(
     React.useCallback(() => {
+      // eslint-disable-next-line react-hooks/immutability -- TODO(offline-redesign PR 4a): legacy code, rebuilt in PR 4a
       cargarGastos()
     }, [mesActual, añoActual])
   )
@@ -522,7 +523,7 @@ export default function GastosScreen() {
               </View>
               
               <Paragraph style={styles.modalText}>
-                ¿Estás seguro de que deseas eliminar el gasto "{gastoAEliminar?.descripcion}"?
+                ¿Estás seguro de que deseas eliminar el gasto &quot;{gastoAEliminar?.descripcion}&quot;?
               </Paragraph>
               
               <Paragraph style={styles.modalWarning}>
@@ -569,7 +570,7 @@ export default function GastosScreen() {
               </View>
               
               <Paragraph style={styles.modalText}>
-                ¿Deseas enviar una solicitud de pago para "{gastoParaSolicitud?.descripcion}"?
+                ¿Deseas enviar una solicitud de pago para &quot;{gastoParaSolicitud?.descripcion}&quot;?
               </Paragraph>
               
               <Paragraph style={styles.modalText}>
