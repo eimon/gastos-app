@@ -187,7 +187,7 @@ export default function GastoDetalleScreen() {
 
   const confirmarPagoDirecto = (detalle: GastoDetalle) => {
     const montoRestante = getMontoRestante(detalle)
-    const nombreParticipante = detalle.usuario?.nombre || detalle.usuario?.email || 'Participante'
+    const nombreParticipante = detalle.usuario?.nickname || detalle.usuario?.email || 'Participante'
     
     showConfirm(
       'Confirmar Pago',
@@ -691,7 +691,11 @@ export default function GastoDetalleScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await pagosService.eliminarPago(pagoId)
+              const { data: { user } } = await supabase.auth.getUser()
+              if (!user || !user.id) {
+                throw new Error('Usuario no autenticado')
+              }
+              await pagosService.eliminarPago(pagoId, user.id)
               showAlert('Éxito', 'Pago eliminado correctamente')
               // Recargar los datos
               if (gastoId && numeroCuota) {
@@ -845,7 +849,7 @@ export default function GastoDetalleScreen() {
                       { backgroundColor: progresoMes === 100 ? '#4CAF50' : '#2196F3' }
                     ]}
                   >
-                    {Math.round(progresoMes)}%
+                    {`${Math.round(progresoMes)}%`}
                   </Badge>
                 </View>
                 

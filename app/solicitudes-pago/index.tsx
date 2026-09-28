@@ -152,24 +152,24 @@ export default function SolicitudesPagoScreen() {
           )}
           
           <Text style={styles.solicitudFecha}>
-            {formatearFecha(solicitud.vencimiento)}
+            {formatearFecha(solicitud.vencimiento || '')}
           </Text>
           
           {esRecibida && solicitud.estado === 'pendiente' && (
             <View style={styles.botonesAccion}>
               <Button
-                key={`aceptar-${solicitud.solicitud_id}`}
+                key={`aceptar-${solicitud.id}`}
                 mode="contained"
-                onPress={() => aceptarSolicitud(solicitud.solicitud_id, solicitud.usuario_creador_id)}
+                onPress={() => aceptarSolicitud(solicitud.id, solicitud.usuario_creador_id)}
                 style={[styles.botonAccion, styles.botonAceptar]}
                 labelStyle={styles.botonTexto}
               >
                 Aceptar
               </Button>
               <Button
-                key={`rechazar-${solicitud.solicitud_id}`}
+                key={`rechazar-${solicitud.id}`}
                 mode="outlined"
-                onPress={() => rechazarSolicitud(solicitud.solicitud_id, solicitud.usuario_creador_id)}
+                onPress={() => rechazarSolicitud(solicitud.id)}
                 style={[styles.botonAccion, styles.botonRechazar]}
                 labelStyle={styles.botonTextoRechazar}
               >
@@ -243,7 +243,7 @@ export default function SolicitudesPagoScreen() {
         {vistaActual === 'recibidas' ? (
           solicitudesRecibidas.length > 0 ? (
             solicitudesRecibidas.map(solicitud => (
-              <View key={`recibida-${solicitud.solicitud_id}`}>
+              <View key={`recibida-${solicitud.id}`}>
                 {renderSolicitud(solicitud, true)}
               </View>
             ))
@@ -256,7 +256,7 @@ export default function SolicitudesPagoScreen() {
         ) : (
           solicitudesEnviadas.length > 0 ? (
             solicitudesEnviadas.map(solicitud => (
-              <View key={`enviada-${solicitud.solicitud_id}`}>
+              <View key={`enviada-${solicitud.id}`}>
                 {renderSolicitud(solicitud, false)}
               </View>
             ))

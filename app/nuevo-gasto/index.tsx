@@ -805,7 +805,7 @@ export default function NuevoGastoScreen() {
             <View style={styles.input}>
                 <Text style={styles.inputLabel}>Monto total</Text>
                 <CurrencyInput
-                  value={montoTotal}
+                  value={montoTotal ?? null}
                   onChangeValue={(value) => {
                     setMontoTotal(value || undefined)
                     setMontoTotalText(value ? value.toString() : '')
@@ -877,7 +877,7 @@ export default function NuevoGastoScreen() {
                 <View style={styles.input}>
                    <Text style={styles.inputLabel}>Monto del descuento</Text>
                    <CurrencyInput
-                     value={descuento}
+                     value={descuento ?? null}
                      onChangeValue={(value) => {
                        setDescuento(value || undefined)
                        setDescuentoText(value ? value.toString() : '')

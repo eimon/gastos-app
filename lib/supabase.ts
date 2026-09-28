@@ -309,7 +309,7 @@ export const gastosService = {
     if (errorPropio) throw errorPropio
 
     // Convertir gastos compartidos de RPC a formato de detalles
-    const detallesCompartidos = (gastosCompartidos || []).map(gc => ({
+    const detallesCompartidos = (gastosCompartidos || []).map((gc: any) => ({
       id: `${gc.gasto_id}-${gc.mi_numero_cuota}-${userId}`,
       gasto_id: gc.gasto_id,
       usuario_id: userId,
@@ -351,7 +351,7 @@ export const gastosService = {
 
     // Filtrar gastos compartidos por mes si se especifica
     const detallesCompartidosFiltrados = mes !== undefined && año !== undefined 
-      ? detallesCompartidos.filter(detalle => {
+      ? detallesCompartidos.filter((detalle: any) => {
           if (!detalle.vencimiento) {
             return false;
           }
@@ -800,10 +800,10 @@ export const gastosService = {
     const montoAUsar = nuevoMonto || gastoOriginal.monto
 
     // Obtener participantes únicos de la cuota 1 del gasto original
-    const participantesOriginales = gastoOriginal.detalles?.filter(d => d.numero_cuota === 1) || []
-    
+    const participantesOriginales = gastoOriginal.detalles?.filter((d: any) => d.numero_cuota === 1) || []
+
     // Preparar participantes en formato JSONB para la función RPC
-    const participantesJsonb = participantesOriginales.map(p => ({
+    const participantesJsonb = participantesOriginales.map((p: any) => ({
       usuario_id: p.usuario_id || null,
       nickname: p.usuario_id ? null : p.nombre_participante
     }))

@@ -111,7 +111,7 @@ export default function ResumenScreen() {
       
       // Formatear pagos para mostrar
       const pagosFormateados = pagosData
-        .map(pago => ({
+        .map((pago: any) => ({
           id: pago.id,
           descripcion: pago.gasto_detalle?.gasto?.descripcion || 'Gasto eliminado',
           monto: pago.monto,
@@ -237,6 +237,7 @@ export default function ResumenScreen() {
                   chartConfig={chartConfig}
                   accessor="population"
                   backgroundColor="transparent"
+                  paddingLeft="0"
                   absolute
                   hasLegend={true}
                 />

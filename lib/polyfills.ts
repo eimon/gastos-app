@@ -2,7 +2,10 @@
 
 // Polyfill mejorado para structuredClone
 if (typeof global.structuredClone === 'undefined') {
-  global.structuredClone = function structuredClone(obj: any, seen = new WeakMap()): any {
+  // Named `structuredCloneImpl` (not `structuredClone`) because the recursive
+  // helper takes an internal `seen` WeakMap that the real `structuredClone`
+  // signature (value, options?: StructuredSerializeOptions) does not have.
+  const structuredCloneImpl = function structuredCloneImpl(obj: any, seen: WeakMap<any, any> = new WeakMap()): any {
     // Manejar valores primitivos y null/undefined
     if (obj === null || typeof obj !== 'object') {
       return obj;
@@ -26,7 +29,7 @@ if (typeof global.structuredClone === 'undefined') {
       const clonedMap = new Map();
       seen.set(obj, clonedMap);
       for (const [key, value] of obj) {
-        clonedMap.set(structuredClone(key, seen), structuredClone(value, seen));
+        clonedMap.set(structuredCloneImpl(key, seen), structuredCloneImpl(value, seen));
       }
       seen.delete(obj);
       return clonedMap;
@@ -36,7 +39,7 @@ if (typeof global.structuredClone === 'undefined') {
       const clonedSet = new Set();
       seen.set(obj, clonedSet);
       for (const value of obj) {
-        clonedSet.add(structuredClone(value, seen));
+        clonedSet.add(structuredCloneImpl(value, seen));
       }
       seen.delete(obj);
       return clonedSet;
@@ -46,7 +49,7 @@ if (typeof global.structuredClone === 'undefined') {
       const clonedArray: any[] = [];
       seen.set(obj, clonedArray);
       for (let i = 0; i < obj.length; i++) {
-        clonedArray[i] = structuredClone(obj[i], seen);
+        clonedArray[i] = structuredCloneImpl(obj[i], seen);
       }
       seen.delete(obj);
       return clonedArray;
@@ -58,7 +61,7 @@ if (typeof global.structuredClone === 'undefined') {
       seen.set(obj, cloned);
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
-          cloned[key] = structuredClone(obj[key], seen);
+          cloned[key] = structuredCloneImpl(obj[key], seen);
         }
       }
       seen.delete(obj);
@@ -67,6 +70,8 @@ if (typeof global.structuredClone === 'undefined') {
     
     return obj;
   };
+
+  global.structuredClone = structuredCloneImpl as typeof global.structuredClone;
 }
 
 // Exportar para uso explícito si es necesario

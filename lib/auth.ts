@@ -86,15 +86,17 @@ export const signInWithGoogleNative = async () => {
     console.log('Google Sign-In exitoso:', userInfo)
     
     // Verificar que tenemos el idToken (está en userInfo.data.idToken)
+    // @ts-expect-error TODO(offline-redesign PR 7a): legacy code, removed in PR 7a — userInfo.idToken is a pre-v15 fallback shape no longer in @react-native-google-signin/google-signin's types
     const idToken = userInfo.data?.idToken || userInfo.idToken
     if (!idToken) {
       throw new Error('No se pudo obtener el ID token de Google')
     }
-    
+
     // Autenticar con Supabase usando el ID token
     const { data, error } = await supabase.auth.signInWithIdToken({
       provider: 'google',
       token: idToken,
+      // @ts-expect-error TODO(offline-redesign PR 7a): legacy code, removed in PR 7a — userInfo.serverAuthCode is a pre-v15 fallback shape no longer in the library's types
       access_token: userInfo.data?.serverAuthCode || userInfo.serverAuthCode || undefined,
     })
     

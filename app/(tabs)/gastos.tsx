@@ -276,8 +276,9 @@ export default function GastosScreen() {
     return (
       <ComponenteContenedor 
         style={[
-          styles.gastoRowCard, 
+          styles.gastoRowCard,
           esGastoCompartido && styles.gastoCompartidoRowCard,
+          // @ts-expect-error TODO(offline-redesign PR 7a): legacy code, removed in PR 7a — gastoParticipoRowCard was never defined in styles
           esGastoParticipo && styles.gastoParticipoRowCard
         ]}
         {...propsContenedor}
