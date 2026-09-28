@@ -22,7 +22,9 @@ export interface InputGasto {
 }
 
 export type ErrorGasto =
+  | 'MONTO_INVALIDO'
   | 'DESCUENTO_INVALIDO'
+  | 'CUOTAS_INVALIDA'
   | 'TARJETA_REQUERIDA'
   | 'TIPO_DESCUENTO_REQUERIDO'
   | 'SIN_PARTICIPANTES';
@@ -30,16 +32,32 @@ export type ErrorGasto =
 /**
  * Validates a gasto before planning it. Used both for inline form
  * errors and as the gate `planificarGasto` checks before computing
- * anything.
+ * anything. This MUST be an exhaustive gate: `planificarGasto` only
+ * calls into `calcularMontosCuotas`/`calcularVencimientosTarjeta` after
+ * this reports zero errors, so any input shape those functions assume
+ * (integer positive amounts, integer cuotas >= 1) has to be rejected
+ * here first — never left to leak a raw error from the lower layers.
  */
 export function validarGasto(input: InputGasto): ErrorGasto[] {
   const errores: ErrorGasto[] = [];
 
+  if (!Number.isInteger(input.montoTotalCents) || input.montoTotalCents <= 0) {
+    errores.push('MONTO_INVALIDO');
+  }
+
   // A discount >= the total would leave a net amount of 0 (or negative),
   // which is never a valid gasto — independent of a prorrateo cuota
   // individually resolving to 0, which stays valid.
-  if (input.descuentoCents < 0 || input.descuentoCents >= input.montoTotalCents) {
+  if (
+    !Number.isInteger(input.descuentoCents) ||
+    input.descuentoCents < 0 ||
+    input.descuentoCents >= input.montoTotalCents
+  ) {
     errores.push('DESCUENTO_INVALIDO');
+  }
+
+  if (!Number.isInteger(input.cuotas) || input.cuotas < 1) {
+    errores.push('CUOTAS_INVALIDA');
   }
 
   if (input.cuotas > 1 && !input.tarjeta) {
