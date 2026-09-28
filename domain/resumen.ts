@@ -70,6 +70,12 @@ function normalizarNombre(nombre: string): string {
   return nombre.trim().toLowerCase();
 }
 
+/**
+ * Groups pending items by a normalized (trimmed, case-insensitive) key
+ * so "Juan", " juan " and "JUAN" merge into one entry. The DISPLAY name
+ * kept for the merged entry is the FIRST variant seen (trimmed only,
+ * casing preserved) — later variants only contribute their amounts.
+ */
 function agruparPendientesPorNombre<T extends Pendiente>(
   items: T[],
   m: Mes,

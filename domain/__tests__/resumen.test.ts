@@ -53,6 +53,21 @@ describe('cobrosPorPersona ("Me deben")', () => {
       { nombre: 'Juan', delMesCents: 0, vencidoCents: 33_333_33, totalCents: 33_333_33 },
     ]);
   });
+
+  test('merges the same person written with different casing/whitespace, keeping the first variant seen as display name', () => {
+    const cobros = cobrosPorPersona(
+      [
+        { nombre: 'Juan', montoCents: 10_000_00, pagos: [], fechaVencimiento: '2026-03-10' },
+        { nombre: '  juan  ', montoCents: 5_000_00, pagos: [], fechaVencimiento: '2026-03-15' },
+        { nombre: 'JUAN', montoCents: 2_000_00, pagos: [], fechaVencimiento: '2026-03-20' },
+      ],
+      marzo2026,
+    );
+
+    expect(cobros).toEqual([
+      { nombre: 'Juan', delMesCents: 17_000_00, vencidoCents: 0, totalCents: 17_000_00 },
+    ]);
+  });
 });
 
 describe('deudasPorAcreedor ("Debo")', () => {
@@ -75,6 +90,21 @@ describe('deudasPorAcreedor ("Debo")', () => {
 
     expect(deudas).toEqual([
       { acreedor: 'Banco X', delMesCents: 0, vencidoCents: 30_000_00, totalCents: 30_000_00 },
+    ]);
+  });
+
+  test('merges "Banco X", "  banco x  " and "BANCO X" into one entry, keeping the first variant seen as display name', () => {
+    const deudas = deudasPorAcreedor(
+      [
+        { acreedor: 'Banco X', montoCents: 10_000_00, pagos: [], fechaVencimiento: '2026-03-10' },
+        { acreedor: '  banco x  ', montoCents: 5_000_00, pagos: [], fechaVencimiento: '2026-03-15' },
+        { acreedor: 'BANCO X', montoCents: 2_000_00, pagos: [], fechaVencimiento: '2026-03-20' },
+      ],
+      marzo2026,
+    );
+
+    expect(deudas).toEqual([
+      { acreedor: 'Banco X', delMesCents: 17_000_00, vencidoCents: 0, totalCents: 17_000_00 },
     ]);
   });
 });
