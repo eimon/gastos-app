@@ -15,12 +15,10 @@ import {
   Card,
   Title,
   Paragraph,
-  Divider,
 } from 'react-native-paper'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../lib/supabase'
 import { showAlert } from '../lib/alerts'
-import { handleGoogleOAuth, signInWithGoogleNative, configureGoogleSignIn } from '../lib/auth'
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('')
@@ -98,22 +96,6 @@ export default function LoginScreen() {
       showAlert('Error de Registro', errorMessage + '\n\nSi el problema persiste, contacta al administrador.')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleGoogleAuth = async () => {
-    try {
-      if (Platform.OS === 'android') {
-        // Configurar Google Sign-In antes del primer uso
-        await configureGoogleSignIn()
-        // Usar método nativo en Android
-        await signInWithGoogleNative()
-      } else {
-        // Usar método web en iOS y otras plataformas
-        await handleGoogleOAuth()
-      }
-    } catch (error: any) {
-      showAlert('Error', error.message)
     }
   }
 
@@ -232,18 +214,6 @@ export default function LoginScreen() {
                 ¿Olvidaste tu contraseña?
               </Button>
             )}
-
-            <Divider style={styles.divider} />
-
-            <Button
-              mode="outlined"
-              onPress={handleGoogleAuth}
-              style={styles.button}
-              contentStyle={styles.buttonContent}
-              icon="google"
-            >
-              Continuar con Google
-            </Button>
 
             <Button
               mode="text"

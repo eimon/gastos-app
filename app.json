@@ -45,7 +45,6 @@
       "expo-router",
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-web-browser",
       "expo-image",
       [
         "expo-splash-screen",
