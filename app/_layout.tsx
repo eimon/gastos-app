@@ -11,6 +11,7 @@ import { Session } from '@supabase/supabase-js'
 import LoginScreen from '../components/LoginScreen'
 
 import { MonthProvider } from '../contexts/MonthContext'
+import { DatabaseProvider } from '../data/db/DatabaseProvider'
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
@@ -41,7 +42,9 @@ export default function RootLayout() {
     return (
       <PaperProvider>
         <StatusBar style="dark" />
-        <LoginScreen />
+        <DatabaseProvider>
+          <LoginScreen />
+        </DatabaseProvider>
       </PaperProvider>
     )
   }
@@ -50,10 +53,12 @@ export default function RootLayout() {
     <PaperProvider>
       <MonthProvider>
         <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="nuevo-gasto/index" />
-        </Stack>
+        <DatabaseProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="nuevo-gasto/index" />
+          </Stack>
+        </DatabaseProvider>
       </MonthProvider>
     </PaperProvider>
   )

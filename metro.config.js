@@ -7,4 +7,8 @@ const config = getDefaultConfig(__dirname, {
   isCSSEnabled: true,
 });
 
+// Allows importing drizzle-kit's generated .sql migration files (bundled
+// as strings via the babel-plugin-inline-import config in babel.config.js).
+config.resolver.sourceExts.push('sql');
+
 module.exports = config;
