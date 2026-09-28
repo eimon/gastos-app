@@ -1,6 +1,6 @@
 import { db } from '../data/db/client';
 import * as tarjetasRepo from '../data/repositories/tarjetasRepo';
-import { validarTarjeta } from '../domain/tarjeta';
+import { validarOLanzar } from './tarjetaGate';
 import { emitirCambio } from './cambios';
 
 export async function listar(): Promise<tarjetasRepo.Tarjeta[]> {
@@ -14,13 +14,6 @@ export async function listarTodas(): Promise<tarjetasRepo.Tarjeta[]> {
 
 export async function obtener(id: string): Promise<tarjetasRepo.Tarjeta | undefined> {
   return tarjetasRepo.obtener(db, id);
-}
-
-function validarOLanzar(input: tarjetasRepo.InputTarjeta): void {
-  const errores = validarTarjeta(input);
-  if (errores.length > 0) {
-    throw new Error(`Tarjeta invalida: ${errores.join(', ')}`);
-  }
 }
 
 export async function crear(input: tarjetasRepo.InputTarjeta): Promise<tarjetasRepo.Tarjeta> {
