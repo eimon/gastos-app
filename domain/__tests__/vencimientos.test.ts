@@ -89,4 +89,15 @@ describe('calcularVencimientosMensuales', () => {
       '2026-03-15',
     ]);
   });
+
+  test('clamps from the ORIGINAL day every month, not the previously clamped day', () => {
+    // Day 31 clamps independently each month: Feb has 28 days (2026 is not
+    // leap), March has 31, April has 30 — the clamp never "sticks" at 28.
+    expect(calcularVencimientosMensuales('2026-01-31', 4)).toEqual([
+      '2026-01-31',
+      '2026-02-28',
+      '2026-03-31',
+      '2026-04-30',
+    ]);
+  });
 });
