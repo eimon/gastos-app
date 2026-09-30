@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react'
 import { View, StyleSheet, ScrollView } from 'react-native'
 import { Appbar, Button, Chip, HelperText, List, SegmentedButtons, Text, TextInput } from 'react-native-paper'
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
+import { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 
 import { CampoMonto } from '../../components/CampoMonto'
@@ -54,7 +54,6 @@ export default function NuevoGastoScreen() {
     modoReparto: 'iguales',
     montoUsuario: null,
   }))
-  const [mostrarFecha, setMostrarFecha] = useState(false)
   const [intentoGuardar, setIntentoGuardar] = useState(false)
   const [guardando, setGuardando] = useState(false)
   // A ref, not just state: two taps in the same frame both see guardando=false.
@@ -74,11 +73,17 @@ export default function NuevoGastoScreen() {
   const permitePersonalizado = valores.tipo === 'compartido' && cuotasNumero === 1
   const personalizado = esRepartoPersonalizado(valores)
 
-  function elegirFecha(evento: DateTimePickerEvent, fecha?: Date) {
-    setMostrarFecha(false)
-    if (evento.type === 'set' && fecha) {
-      cambiar('fechaCompra', aFechaISOLocal(fecha))
-    }
+  // Imperative Android dialog: it opens once per press, so a re-render can't re-open it.
+  function abrirSelectorFecha() {
+    DateTimePickerAndroid.open({
+      value: deFechaISOLocal(valores.fechaCompra),
+      mode: 'date',
+      onChange: (evento: DateTimePickerEvent, fecha?: Date) => {
+        if (evento.type === 'set' && fecha) {
+          cambiar('fechaCompra', aFechaISOLocal(fecha))
+        }
+      },
+    })
   }
 
   async function guardar() {
@@ -124,10 +129,9 @@ export default function NuevoGastoScreen() {
           <CampoMonto label="Monto total" valor={valores.monto} onCambiar={(v) => cambiar('monto', v)} />
         )}
 
-        <Button icon="calendar" mode="outlined" onPress={() => setMostrarFecha(true)} style={styles.campo}>
+        <Button icon="calendar" mode="outlined" onPress={abrirSelectorFecha} style={styles.campo}>
           {`Fecha de compra: ${formatearFecha(valores.fechaCompra)}`}
         </Button>
-        {mostrarFecha && <DateTimePicker value={deFechaISOLocal(valores.fechaCompra)} mode="date" onChange={elegirFecha} />}
 
         {permitePersonalizado && (
           <SegmentedButtons

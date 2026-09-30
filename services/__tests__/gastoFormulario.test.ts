@@ -6,6 +6,7 @@ import {
   esFechaISOValida,
   evaluarFormulario,
   esRepartoPersonalizado,
+  siguienteIdFila,
   type ValoresGastoForm,
 } from '../gastoFormulario';
 
@@ -191,6 +192,16 @@ describe('construirInputCrear', () => {
       tipoDescuento: null,
       participantes: [],
     });
+  });
+});
+
+describe('siguienteIdFila', () => {
+  test('starts at 1 and never repeats an id already in the rows, even after a remount', () => {
+    expect(siguienteIdFila([])).toBe('participante-1');
+    const filas = [fila('Ana', null, 'participante-1'), fila('Luis', null, 'participante-2')];
+    expect(siguienteIdFila(filas)).toBe('participante-3');
+    expect(siguienteIdFila([filas[0]])).toBe('participante-2');
+    expect(siguienteIdFila([fila('X', null, 'otro'), fila('Y', null, 'participante-7')])).toBe('participante-8');
   });
 });
 

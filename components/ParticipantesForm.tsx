@@ -1,11 +1,10 @@
 // components/ParticipantesForm.tsx - Filas de participantes (una por persona), con monto propio en modo personalizado
-import { useRef } from 'react'
 import { View, StyleSheet } from 'react-native'
 import { Button, IconButton, Text, TextInput } from 'react-native-paper'
 
 import { CampoMonto } from './CampoMonto'
 import { NOMBRE_USUARIO } from '../domain/participantes'
-import type { FilaParticipante } from '../services/gastoFormulario'
+import { siguienteIdFila, type FilaParticipante } from '../services/gastoFormulario'
 
 interface Props {
   filas: FilaParticipante[]
@@ -16,11 +15,8 @@ interface Props {
 }
 
 export function ParticipantesForm({ filas, personalizado, montoUsuario, onCambiarFilas, onCambiarMontoUsuario }: Props) {
-  const contador = useRef(0)
-
   function agregar() {
-    contador.current += 1
-    onCambiarFilas([...filas, { id: `participante-${contador.current}`, nombre: '', monto: null }])
+    onCambiarFilas([...filas, { id: siguienteIdFila(filas), nombre: '', monto: null }])
   }
 
   function actualizar(id: string, cambios: Partial<FilaParticipante>) {
@@ -55,7 +51,7 @@ export function ParticipantesForm({ filas, personalizado, montoUsuario, onCambia
       <View style={styles.fila}>
         <View style={styles.campos}>
           <TextInput label="Nombre" value={NOMBRE_USUARIO} mode="outlined" dense disabled />
-          {personalizado && <CampoMonto label="Monto (tu parte)" valor={montoUsuario} onCambiar={onCambiarMontoUsuario} />}
+          {personalizado && <CampoMonto label="Monto (parte propia)" valor={montoUsuario} onCambiar={onCambiarMontoUsuario} />}
         </View>
         <View style={styles.espacio} />
       </View>

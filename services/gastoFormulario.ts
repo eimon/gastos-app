@@ -86,6 +86,17 @@ function cuotasNumericas(valores: ValoresGastoForm): number {
 }
 
 /** Custom amounts only exist for a shared gasto paid in exactly 1 cuota. */
+const PREFIJO_ID_FILA = 'participante-';
+
+/** Next unique row id: one above the highest numeric suffix among the existing rows, so it survives remounts. */
+export function siguienteIdFila(filas: FilaParticipante[]): string {
+  const mayor = filas.reduce((max, fila) => {
+    const numero = fila.id.startsWith(PREFIJO_ID_FILA) ? Number(fila.id.slice(PREFIJO_ID_FILA.length)) : 0;
+    return Number.isInteger(numero) && numero > max ? numero : max;
+  }, 0);
+  return `${PREFIJO_ID_FILA}${mayor + 1}`;
+}
+
 export function esRepartoPersonalizado(valores: ValoresGastoForm): boolean {
   return valores.tipo === 'compartido' && valores.modoReparto === 'personalizado' && cuotasNumericas(valores) === 1;
 }
