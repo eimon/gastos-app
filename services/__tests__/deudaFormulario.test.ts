@@ -58,6 +58,11 @@ describe('evaluarFormularioDeuda', () => {
   });
 });
 
+test('an amount above the cap is rejected with a message that states the maximum', () => {
+  expect(evaluarFormularioDeuda(valores({ monto: 10_000_000_000 })).errores).toEqual(['MONTO_EXCESIVO']);
+  expect(MENSAJES_ERROR_DEUDA.MONTO_EXCESIVO).toBe('El monto no puede superar $ 9.999.999.999,99.');
+});
+
 describe('erroresVisiblesDeuda', () => {
   test('before the first save only date and cuotas errors show; after it, all of them', () => {
     const errores = evaluarFormularioDeuda(valores({ acreedor: '', cuotas: '0' })).errores;

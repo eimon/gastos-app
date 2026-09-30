@@ -1,5 +1,5 @@
 import { Centavos, dividirEnPartes } from './dinero';
-import { esCantidadCuotasValida } from './limites';
+import { esCantidadCuotasValida, MAX_MONTO_CENTS } from './limites';
 import { calcularVencimientosMensuales, esFechaISOValida, FechaISO } from './vencimientos';
 
 export interface InputDeuda {
@@ -12,6 +12,7 @@ export interface InputDeuda {
 
 export type ErrorDeuda =
   | 'MONTO_INVALIDO'
+  | 'MONTO_EXCESIVO'
   | 'CUOTAS_INVALIDA'
   | 'ACREEDOR_REQUERIDO'
   | 'DESCRIPCION_REQUERIDA'
@@ -29,6 +30,8 @@ export function validarDeuda(input: InputDeuda): ErrorDeuda[] {
 
   if (!Number.isInteger(input.montoTotalCents) || input.montoTotalCents <= 0) {
     errores.push('MONTO_INVALIDO');
+  } else if (input.montoTotalCents > MAX_MONTO_CENTS) {
+    errores.push('MONTO_EXCESIVO');
   }
 
   if (!esCantidadCuotasValida(input.cuotas)) {

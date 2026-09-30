@@ -15,7 +15,8 @@ import {
   type TarjetaGasto,
   type TipoGasto,
 } from '../domain/gasto';
-import { MAX_CUOTAS } from '../domain/limites';
+import { MAX_CUOTAS, MAX_MONTO_CENTS } from '../domain/limites';
+import { formatearMonto } from './gastoVista';
 import { esFechaISOValida } from '../domain/vencimientos';
 import { NOMBRE_USUARIO, sumarMontos } from '../domain/participantes';
 import type { InputCrearGasto } from './gastosService';
@@ -56,6 +57,7 @@ export const MENSAJES_ERROR_GASTO: Record<ErrorFormularioGasto, string> = {
   DESCRIPCION_REQUERIDA: 'La descripción es obligatoria.',
   FECHA_INVALIDA: 'La fecha de compra no es válida.',
   MONTO_INVALIDO: 'El monto debe ser mayor a cero.',
+  MONTO_EXCESIVO: `El monto no puede superar ${formatearMonto(MAX_MONTO_CENTS)}.`,
   DESCUENTO_INVALIDO: 'El descuento debe ser mayor o igual a cero y menor al monto total.',
   CUOTAS_INVALIDA: `La cantidad de cuotas debe ser un número entero entre 1 y ${MAX_CUOTAS}.`,
   TARJETA_REQUERIDA: 'Para pagar en más de una cuota hay que elegir una tarjeta.',

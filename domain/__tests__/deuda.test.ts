@@ -1,4 +1,4 @@
-import { MAX_CUOTAS } from '../limites';
+import { MAX_CUOTAS, MAX_MONTO_CENTS } from '../limites';
 import { planificarDeuda, validarDeuda, InputDeuda } from '../deuda';
 
 const inputBase: InputDeuda = {
@@ -48,6 +48,11 @@ describe('validarDeuda', () => {
 
   test('rejects a non-positive montoTotalCents', () => {
     expect(validarDeuda({ ...inputBase, montoTotalCents: 0 })).toContain('MONTO_INVALIDO');
+  });
+
+  test('accepts exactly the maximum amount and rejects one cent above it', () => {
+    expect(validarDeuda({ ...inputBase, montoTotalCents: MAX_MONTO_CENTS })).toEqual([]);
+    expect(validarDeuda({ ...inputBase, montoTotalCents: MAX_MONTO_CENTS + 1 })).toEqual(['MONTO_EXCESIVO']);
   });
 
   test('rejects a non-integer montoTotalCents', () => {

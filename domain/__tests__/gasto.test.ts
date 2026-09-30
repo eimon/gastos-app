@@ -1,4 +1,4 @@
-import { MAX_CUOTAS } from '../limites';
+import { MAX_CUOTAS, MAX_MONTO_CENTS } from '../limites';
 import { validarGasto, planificarGasto, InputGasto } from '../gasto';
 
 const inputBase: InputGasto = {
@@ -11,6 +11,13 @@ const inputBase: InputGasto = {
   tarjeta: null,
   participantes: [],
 };
+
+describe('validarGasto amount cap', () => {
+  test('accepts exactly the maximum and rejects one cent above it', () => {
+    expect(validarGasto({ ...inputBase, montoTotalCents: MAX_MONTO_CENTS })).toEqual([]);
+    expect(validarGasto({ ...inputBase, montoTotalCents: MAX_MONTO_CENTS + 1 })).toEqual(['MONTO_EXCESIVO']);
+  });
+});
 
 describe('validarGasto', () => {
   test('rejects a discount equal to the total (net amount would be 0)', () => {

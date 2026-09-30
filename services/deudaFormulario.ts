@@ -5,9 +5,10 @@
  * codes to user-facing messages.
  */
 import { planificarDeuda, validarDeuda, type ErrorDeuda, type InputDeuda, type PlanDeuda } from '../domain/deuda';
-import { MAX_CUOTAS } from '../domain/limites';
+import { MAX_CUOTAS, MAX_MONTO_CENTS } from '../domain/limites';
 import type { Deuda } from '../data/repositories/deudasRepo';
 import { aCentavos, fechaHoyISO } from './gastoFormulario';
+import { formatearMonto } from './gastoVista';
 
 export interface ValoresDeudaForm {
   acreedor: string;
@@ -24,6 +25,7 @@ export const MENSAJES_ERROR_DEUDA: Record<ErrorDeuda, string> = {
   ACREEDOR_REQUERIDO: 'El acreedor es obligatorio.',
   DESCRIPCION_REQUERIDA: 'La descripción es obligatoria.',
   MONTO_INVALIDO: 'El monto debe ser mayor a cero.',
+  MONTO_EXCESIVO: `El monto no puede superar ${formatearMonto(MAX_MONTO_CENTS)}.`,
   CUOTAS_INVALIDA: `La cantidad de cuotas debe ser un número entero entre 1 y ${MAX_CUOTAS}.`,
   FECHA_INVALIDA: 'La fecha del primer pago no es válida.',
 };

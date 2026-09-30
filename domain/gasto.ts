@@ -1,7 +1,7 @@
 import { Centavos } from './dinero';
 import { calcularMontosCuotas, TipoDescuento } from './cuotas';
 import { sumarMontos, validarMontosPersonalizados, validarNombresParticipantes } from './participantes';
-import { esCantidadCuotasValida } from './limites';
+import { esCantidadCuotasValida, MAX_MONTO_CENTS } from './limites';
 import { calcularVencimientosTarjeta, esFechaISOValida, FechaISO } from './vencimientos';
 
 export type TipoGasto = 'personal' | 'compartido';
@@ -34,6 +34,7 @@ export type ErrorGasto =
   | 'DESCRIPCION_REQUERIDA'
   | 'FECHA_INVALIDA'
   | 'MONTO_INVALIDO'
+  | 'MONTO_EXCESIVO'
   | 'DESCUENTO_INVALIDO'
   | 'CUOTAS_INVALIDA'
   | 'TARJETA_REQUERIDA'
@@ -66,6 +67,8 @@ export function validarGasto(input: InputGasto): ErrorGasto[] {
 
   if (!Number.isInteger(input.montoTotalCents) || input.montoTotalCents <= 0) {
     errores.push('MONTO_INVALIDO');
+  } else if (input.montoTotalCents > MAX_MONTO_CENTS) {
+    errores.push('MONTO_EXCESIVO');
   }
 
   // A discount >= the total would leave a net amount of 0 (or negative),
