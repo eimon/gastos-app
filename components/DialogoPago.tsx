@@ -79,6 +79,7 @@ export function DialogoPago({ objetivo, encabezado, restanteCents: restante, suj
       // A rules rejection means the screen's data is stale: reload so the dialog and the
       // detail show the fresh remaining amount instead of the old one.
       if (rechazo) emitirCambio()
+      if (!rechazo) console.error(err)
       setError(rechazo ?? 'No se pudo registrar el pago.')
     } finally {
       enviandoRef.current = false

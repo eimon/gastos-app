@@ -13,8 +13,13 @@ export async function ejecutar(accion: () => Promise<void>, mensajeError: string
   try {
     await accion()
   } catch (err) {
-    if (esErrorDeReglas(err)) emitirCambio()
-    showAlert('Error', esErrorDeReglas(err) ? err.message : mensajeError)
+    if (esErrorDeReglas(err)) {
+      emitirCambio()
+      showAlert('Error', err.message)
+    } else {
+      console.error(err)
+      showAlert('Error', mensajeError)
+    }
   } finally {
     ocupado = false
   }
