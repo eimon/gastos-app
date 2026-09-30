@@ -5,10 +5,12 @@ import { Appbar, Button, HelperText, List, TextInput } from 'react-native-paper'
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 
+import { Bloqueable } from './Bloqueable'
 import { CampoMonto } from './CampoMonto'
 import { useAlturaTeclado } from '../hooks/useAlturaTeclado'
 import { showAlert } from '../lib/alerts'
 import { emitirCambio } from '../services/cambios'
+import { MENSAJES_ERROR_DEUDA_GUARDADA } from '../services/deudaEdicion'
 import {
   MENSAJES_ERROR_DEUDA,
   erroresVisiblesDeuda,
@@ -25,9 +27,11 @@ interface Props {
   valoresIniciales: ValoresDeudaForm
   /** Persists the form; a rejection is shown to the user as an alert. */
   onGuardar: (valores: ValoresDeudaForm) => Promise<void>
+  /** Edit with payments: only the acreedor and the descripcion can change, the rest is shown disabled. */
+  soloTextos?: boolean
 }
 
-export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar }: Props) {
+export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar, soloTextos = false }: Props) {
   const alturaTeclado = useAlturaTeclado()
   const [valores, setValores] = useState<ValoresDeudaForm>(valoresIniciales)
   const [intentoGuardar, setIntentoGuardar] = useState(false)
@@ -39,7 +43,12 @@ export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
     setValores((actuales) => ({ ...actuales, [campo]: valor }))
   }
 
-  const { errores, plan } = evaluarFormularioDeuda(valores)
+  const evaluacion = evaluarFormularioDeuda(valores)
+  // Locked edits only validate the texts; the other fields are never saved.
+  const errores = soloTextos
+    ? evaluacion.errores.filter((e) => e === 'ACREEDOR_REQUERIDO' || e === 'DESCRIPCION_REQUERIDA')
+    : evaluacion.errores
+  const plan = soloTextos ? null : evaluacion.plan
 
   // Imperative Android dialog: it opens once per press, so a re-render can't re-open it.
   function abrirSelectorFecha() {
@@ -84,6 +93,11 @@ export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
       </Appbar.Header>
 
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+        {soloTextos && (
+          <HelperText type="info" visible>
+            {MENSAJES_ERROR_DEUDA_GUARDADA.BLOQUEADO_POR_PAGO}
+          </HelperText>
+        )}
         <TextInput
           label="Acreedor (persona o entidad)"
           value={valores.acreedor}
@@ -97,18 +111,20 @@ export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
           mode="outlined"
           style={styles.campo}
         />
-        <CampoMonto label="Monto total" valor={valores.monto} onCambiar={(v) => cambiar('monto', v)} />
-        <TextInput
-          label="Cuotas"
-          value={valores.cuotas}
-          onChangeText={(texto) => cambiar('cuotas', texto)}
-          mode="outlined"
-          keyboardType="number-pad"
-          style={styles.campo}
-        />
-        <Button icon="calendar" mode="outlined" onPress={abrirSelectorFecha} style={styles.campo}>
-          {`Fecha del primer pago: ${formatearFecha(valores.fechaPrimerPago)}`}
-        </Button>
+        <Bloqueable bloqueado={soloTextos}>
+          <CampoMonto label="Monto total" valor={valores.monto} onCambiar={(v) => cambiar('monto', v)} />
+          <TextInput
+            label="Cuotas"
+            value={valores.cuotas}
+            onChangeText={(texto) => cambiar('cuotas', texto)}
+            mode="outlined"
+            keyboardType="number-pad"
+            style={styles.campo}
+          />
+          <Button icon="calendar" mode="outlined" onPress={abrirSelectorFecha} style={styles.campo}>
+            {`Fecha del primer pago: ${formatearFecha(valores.fechaPrimerPago)}`}
+          </Button>
+        </Bloqueable>
 
         {erroresVisiblesDeuda(errores, intentoGuardar).map((error) => (
           <HelperText key={error} type="error" visible>
