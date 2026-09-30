@@ -10,13 +10,7 @@
     },
     "preview": {
       "environment": "preview",
-      "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "$EXPO_PUBLIC_SUPABASE_URL",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$EXPO_PUBLIC_SUPABASE_ANON_KEY",
-        "EXPO_PUBLIC_APP_NAME": "$EXPO_PUBLIC_APP_NAME",
-        "EXPO_PUBLIC_APP_VERSION": "$EXPO_PUBLIC_APP_VERSION"
-      }
+      "distribution": "internal"
     },
     "production": {
       "autoIncrement": true

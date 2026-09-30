@@ -18,24 +18,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.gastosapp.mobile",
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "https",
-              "host": "tmaxjfuxfczypjbrqelq.supabase.co",
-              "pathPrefix": "/auth/v1/callback"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        }
-      ]
+      "package": "com.gastosapp.mobile"
     },
     "web": {
       "favicon": "./assets/favicon.png",
