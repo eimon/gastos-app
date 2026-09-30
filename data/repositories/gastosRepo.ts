@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 
 import type { Executor } from '../db/client';
 import { generarId } from '../db/ids';
@@ -167,6 +167,37 @@ export function actualizarCompleto(exec: Executor, id: string, input: InputCrear
 
 export function listar(exec: Executor): Gasto[] {
   return exec.select().from(gastos).where(isNull(gastos.deletedAt)).orderBy(desc(gastos.fechaCompra)).all();
+}
+
+export interface CuotaListada {
+  gastoId: string;
+  descripcion: string;
+  tipo: string;
+  cantidadCuotas: number;
+  numero: number;
+  montoCents: number;
+  fechaVencimiento: string;
+}
+
+/** Cuotas of non-deleted gastos whose due date falls in `[desde, hasta]` (inclusive `YYYY-MM-DD`). */
+export function listarCuotasEntre(exec: Executor, desde: string, hasta: string): CuotaListada[] {
+  return exec
+    .select({
+      gastoId: gastos.id,
+      descripcion: gastos.descripcion,
+      tipo: gastos.tipo,
+      cantidadCuotas: gastos.cantidadCuotas,
+      numero: gastoCuotas.numero,
+      montoCents: gastoCuotas.montoCents,
+      fechaVencimiento: gastoCuotas.fechaVencimiento,
+    })
+    .from(gastoCuotas)
+    .innerJoin(gastos, eq(gastoCuotas.gastoId, gastos.id))
+    .where(
+      and(isNull(gastos.deletedAt), gte(gastoCuotas.fechaVencimiento, desde), lte(gastoCuotas.fechaVencimiento, hasta)),
+    )
+    .orderBy(asc(gastoCuotas.fechaVencimiento), asc(gastos.descripcion), asc(gastoCuotas.numero))
+    .all();
 }
 
 export function obtenerConDetalle(exec: Executor, id: string): GastoConDetalle | undefined {

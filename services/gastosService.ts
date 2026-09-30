@@ -4,8 +4,10 @@ import { planificarGasto, type InputGasto, type TipoGasto } from '../domain/gast
 import type { FechaISO } from '../domain/vencimientos';
 import { db, type Executor } from '../data/db/client';
 import * as gastosRepo from '../data/repositories/gastosRepo';
+import * as pagosRepo from '../data/repositories/pagosRepo';
 import * as tarjetasRepo from '../data/repositories/tarjetasRepo';
 import { emitirCambio } from './cambios';
+import { armarDetalleGasto, rangoDelMes, type DetalleGasto } from './gastoVista';
 import { NOMBRE_USUARIO_POR_DEFECTO, construirCuotasRepo, construirParticipantes } from './gastoPlanMapper';
 
 export interface InputCrearGasto {
@@ -111,6 +113,30 @@ export async function listar(): Promise<gastosRepo.Gasto[]> {
 
 export async function obtener(id: string): Promise<gastosRepo.GastoConDetalle | undefined> {
   return gastosRepo.obtenerConDetalle(db, id);
+}
+
+/** Cuotas whose due date falls in the given month (`mes` 1-12), for the month-scoped list. */
+export async function listarDelMes(mes: number, anio: number): Promise<gastosRepo.CuotaListada[]> {
+  const { desde, hasta } = rangoDelMes(mes, anio);
+  return gastosRepo.listarCuotasEntre(db, desde, hasta);
+}
+
+/** Read-only detail: cuota schedule, each participant's share and its derived payment status. */
+export async function obtenerDetalle(id: string): Promise<DetalleGasto | undefined> {
+  const detalle = gastosRepo.obtenerConDetalle(db, id);
+  if (!detalle) {
+    return undefined;
+  }
+
+  const pagosPorParte: Record<string, number[]> = {};
+  for (const cuota of detalle.cuotas) {
+    for (const parte of cuota.partes) {
+      pagosPorParte[parte.id] = pagosRepo.listarPorCuotaParticipante(db, parte.id).map((pago) => pago.montoCents);
+    }
+  }
+  const tarjeta = detalle.gasto.tarjetaId ? tarjetasRepo.obtener(db, detalle.gasto.tarjetaId) : undefined;
+
+  return armarDetalleGasto(detalle, pagosPorParte, tarjeta?.nombre ?? null);
 }
 
 export type ErrorEditarGasto = 'BLOQUEADO_POR_PAGO' | 'GASTO_NO_ENCONTRADO';
