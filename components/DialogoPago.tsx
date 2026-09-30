@@ -9,7 +9,7 @@ import type { MedioPago } from '../data/repositories/pagosRepo'
 import { aCentavos, fechaHoyISO } from '../services/gastoFormulario'
 import { aFechaISOLocal, deFechaISOLocal } from '../services/fechaLocal'
 import { formatearFecha, formatearMonto, type ParteDetalle } from '../services/gastoVista'
-import { errorMontoPago, mensajeCodigoPago } from '../services/pagoFormulario'
+import { errorMontoPago, mensajePagoRechazado } from '../services/pagoFormulario'
 import * as pagosService from '../services/pagosService'
 
 export type ModoPago = 'total' | 'parcial'
@@ -67,11 +67,7 @@ export function DialogoPago({ parte, modo, onCerrar }: Props) {
       })
       onCerrar()
     } catch (err) {
-      setError(
-        err instanceof pagosService.PagoRechazadoError
-          ? err.codigos.map((codigo) => mensajeCodigoPago(codigo, restante)).join(' ')
-          : 'No se pudo registrar el pago.',
-      )
+      setError(mensajePagoRechazado(err, restante) ?? 'No se pudo registrar el pago.')
     } finally {
       enviandoRef.current = false
       setEnviando(false)

@@ -10,7 +10,8 @@ import { useServicio } from '../../hooks/useServicio'
 import { showAlert, showConfirm } from '../../lib/alerts'
 import * as gastosService from '../../services/gastosService'
 import * as pagosService from '../../services/pagosService'
-import { GastoRechazadoError, MENSAJES_ERROR_GASTO_GUARDADO } from '../../services/gastoEdicion'
+import { MENSAJES_ERROR_GASTO_GUARDADO } from '../../services/gastoEdicion'
+import { esErrorDeReglas } from '../../services/errorDominio'
 import {
   contarPagos,
   etiquetaTipoDescuento,
@@ -45,7 +46,7 @@ async function ejecutar(accion: () => Promise<void>, mensajeError: string) {
   try {
     await accion()
   } catch (err) {
-    showAlert('Error', err instanceof GastoRechazadoError ? err.message : mensajeError)
+    showAlert('Error', esErrorDeReglas(err) ? err.message : mensajeError)
   } finally {
     ocupado = false
   }

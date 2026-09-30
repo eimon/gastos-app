@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 
 import { estadoDePago, validarPago, type ErrorPago } from '../domain/pagos';
 import { db, type Transaction } from '../data/db/client';
-import { cuotaParticipantes, deudaCuotas, gastoParticipantes } from '../data/db/schema';
+import { cuotaParticipantes, deudaCuotas, gastoCuotas, gastoParticipantes, gastos } from '../data/db/schema';
 import * as pagosRepo from '../data/repositories/pagosRepo';
 import { emitirCambio } from './cambios';
 
@@ -18,10 +18,14 @@ export interface InputRegistrarPago {
   notas?: string | null;
 }
 
-export type CodigoErrorPago = ErrorPago | 'ES_USUARIO' | 'OBJETIVO_NO_ENCONTRADO';
+export type CodigoErrorPago = ErrorPago | 'ES_USUARIO' | 'OBJETIVO_NO_ENCONTRADO' | 'GASTO_ELIMINADO';
 
 export class PagoRechazadoError extends Error {
-  constructor(public readonly codigos: CodigoErrorPago[]) {
+  /** `restanteCents` is the fresh remaining amount seen inside the transaction, for amount errors. */
+  constructor(
+    public readonly codigos: CodigoErrorPago[],
+    public readonly restanteCents?: number,
+  ) {
     super(`Pago rechazado: ${codigos.join(', ')}`);
   }
 }
@@ -31,14 +35,24 @@ function verificarYRegistrar(tx: Transaction, input: InputRegistrarPago): pagosR
     const { cuotaParticipanteId } = input.objetivo;
 
     const fila = tx
-      .select({ montoCents: cuotaParticipantes.montoCents, esUsuario: gastoParticipantes.esUsuario })
+      .select({
+        montoCents: cuotaParticipantes.montoCents,
+        esUsuario: gastoParticipantes.esUsuario,
+        gastoEliminadoEn: gastos.deletedAt,
+      })
       .from(cuotaParticipantes)
       .innerJoin(gastoParticipantes, eq(cuotaParticipantes.participanteId, gastoParticipantes.id))
+      .innerJoin(gastoCuotas, eq(cuotaParticipantes.gastoCuotaId, gastoCuotas.id))
+      .innerJoin(gastos, eq(gastoCuotas.gastoId, gastos.id))
       .where(eq(cuotaParticipantes.id, cuotaParticipanteId))
       .get();
 
     if (!fila) {
       throw new PagoRechazadoError(['OBJETIVO_NO_ENCONTRADO']);
+    }
+    // A deleted gasto can no longer receive pagos.
+    if (fila.gastoEliminadoEn) {
+      throw new PagoRechazadoError(['GASTO_ELIMINADO']);
     }
     // The user's own share is informational-only and can never be paid
     // (spec: User's Own Cuota Is Informational) — the schema can't express
@@ -51,7 +65,7 @@ function verificarYRegistrar(tx: Transaction, input: InputRegistrarPago): pagosR
     const { restante } = estadoDePago(fila.montoCents, pagosExistentes);
     const errores = validarPago(input.montoCents, restante);
     if (errores.length > 0) {
-      throw new PagoRechazadoError(errores);
+      throw new PagoRechazadoError(errores, restante);
     }
 
     return pagosRepo.registrar(tx, {
@@ -74,7 +88,7 @@ function verificarYRegistrar(tx: Transaction, input: InputRegistrarPago): pagosR
   const { restante } = estadoDePago(fila.montoCents, pagosExistentes);
   const errores = validarPago(input.montoCents, restante);
   if (errores.length > 0) {
-    throw new PagoRechazadoError(errores);
+    throw new PagoRechazadoError(errores, restante);
   }
 
   return pagosRepo.registrar(tx, {

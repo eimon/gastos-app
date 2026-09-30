@@ -26,8 +26,12 @@ export const MENSAJES_ERROR_GASTO_GUARDADO: Record<CodigoErrorGasto, string> = {
 };
 
 export class GastoRechazadoError extends Error {
+  /** Same shape as payment rejections, so screens can recognize both through `esErrorDeReglas`. */
+  public readonly codigos: CodigoErrorGasto[];
+
   constructor(public readonly codigo: CodigoErrorGasto) {
     super(MENSAJES_ERROR_GASTO_GUARDADO[codigo]);
+    this.codigos = [codigo];
   }
 }
 

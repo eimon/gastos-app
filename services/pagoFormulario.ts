@@ -7,8 +7,10 @@ import { validarPago } from '../domain/pagos';
 import type { CodigoErrorPago } from './pagosService';
 import { aCentavos } from './gastoFormulario';
 import { formatearMonto } from './gastoVista';
+import { esErrorDeReglas, restanteDeError } from './errorDominio';
 
 export const MENSAJES_ERROR_PAGO: Record<Exclude<CodigoErrorPago, 'EXCEDE_RESTANTE'>, string> = {
+  GASTO_ELIMINADO: 'El gasto fue eliminado y ya no admite pagos.',
   MONTO_INVALIDO: 'El monto debe ser mayor a cero.',
   YA_PAGADO: 'Esta parte ya está pagada.',
   ES_USUARIO: 'La parte propia es informativa y no se paga.',
@@ -25,4 +27,17 @@ export function mensajeCodigoPago(codigo: CodigoErrorPago, restanteCents: number
 export function errorMontoPago(monto: number | null, restanteCents: number): string | null {
   const [codigo] = validarPago(aCentavos(monto), restanteCents);
   return codigo ? mensajeCodigoPago(codigo, restanteCents) : null;
+}
+
+/**
+ * Message for a payment the service rejected, or null when `err` is not a
+ * rules error. The amount shown comes from the service (fresh, read inside
+ * the transaction) and only falls back to the dialog's own value.
+ */
+export function mensajePagoRechazado(err: unknown, restanteDelDialogoCents: number): string | null {
+  if (!esErrorDeReglas<CodigoErrorPago>(err)) {
+    return null;
+  }
+  const restante = restanteDeError(err) ?? restanteDelDialogoCents;
+  return err.codigos.map((codigo) => mensajeCodigoPago(codigo, restante)).join(' ');
 }
