@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react'
 import { View, StyleSheet, ScrollView } from 'react-native'
 import { Appbar, Button, Chip, HelperText, List, SegmentedButtons, Text, TextInput } from 'react-native-paper'
-import { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker'
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 
 import { CampoMonto } from '../../components/CampoMonto'
@@ -78,10 +78,9 @@ export default function NuevoGastoScreen() {
     DateTimePickerAndroid.open({
       value: deFechaISOLocal(valores.fechaCompra),
       mode: 'date',
-      onChange: (evento: DateTimePickerEvent, fecha?: Date) => {
-        if (evento.type === 'set' && fecha) {
-          cambiar('fechaCompra', aFechaISOLocal(fecha))
-        }
+      // Only fires when a date is picked; dismissing the dialog keeps the current value.
+      onValueChange: (_evento, fecha) => {
+        cambiar('fechaCompra', aFechaISOLocal(fecha))
       },
     })
   }
