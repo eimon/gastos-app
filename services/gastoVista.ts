@@ -47,6 +47,13 @@ export function formatearFecha(fecha: string): string {
   return `${dia}/${mes}/${anio}`;
 }
 
+const ETIQUETAS_DESCUENTO: Record<string, string> = { uniforme: 'Uniforme', prorrateo: 'Prorrateo' };
+
+/** Spanish label for the stored discount type; empty when there is none. */
+export function etiquetaTipoDescuento(tipo: string | null): string {
+  return (tipo && ETIQUETAS_DESCUENTO[tipo]) || '';
+}
+
 export interface ParteDetalle {
   id: string;
   nombre: string;

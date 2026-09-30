@@ -1,5 +1,12 @@
 import type { GastoConDetalle } from '../../data/repositories/gastosRepo';
-import { armarDetalleGasto, formatearFecha, formatearMonto, nombreMes, rangoDelMes } from '../gastoVista';
+import {
+  armarDetalleGasto,
+  etiquetaTipoDescuento,
+  formatearFecha,
+  formatearMonto,
+  nombreMes,
+  rangoDelMes,
+} from '../gastoVista';
 
 describe('formatters', () => {
   test('rangoDelMes returns the first and last day, including leap years', () => {
@@ -47,5 +54,13 @@ describe('armarDetalleGasto', () => {
     expect(ana).toMatchObject({ nombre: 'Ana', esUsuario: false });
     expect(ana.resumen).toEqual({ pagado: 200, restante: 300, estado: 'parcial' });
     expect(yo).toMatchObject({ nombre: 'Yo', esUsuario: true, resumen: null });
+  });
+});
+
+describe('etiquetaTipoDescuento', () => {
+  test('maps the stored enum to a Spanish label', () => {
+    expect(etiquetaTipoDescuento('uniforme')).toBe('Uniforme');
+    expect(etiquetaTipoDescuento('prorrateo')).toBe('Prorrateo');
+    expect(etiquetaTipoDescuento(null)).toBe('');
   });
 });

@@ -75,7 +75,7 @@ export default function TarjetasScreen() {
         </View>
       ) : !tarjetas || tarjetas.length === 0 ? (
         <View style={styles.centro}>
-          <Text>No hay tarjetas todavía. Creá la primera con el botón +.</Text>
+          <Text>No hay tarjetas todavía. Tocar + para crear la primera.</Text>
         </View>
       ) : (
         <FlatList data={tarjetas} keyExtractor={claveTarjeta} renderItem={renderTarjeta} />

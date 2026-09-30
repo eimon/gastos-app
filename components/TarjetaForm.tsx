@@ -49,7 +49,7 @@ export default function TarjetaForm({
         style={styles.input}
       />
       <HelperText type="error" visible={errores.includes('DIA_CIERRE_INVALIDO')}>
-        Ingresá un día entre 1 y 31.
+        Debe ser un día entre 1 y 31.
       </HelperText>
 
       <TextInput
@@ -61,7 +61,7 @@ export default function TarjetaForm({
         style={styles.input}
       />
       <HelperText type="error" visible={errores.includes('DIA_VENCIMIENTO_INVALIDO')}>
-        Ingresá un día entre 1 y 31.
+        Debe ser un día entre 1 y 31.
       </HelperText>
 
       <Button mode="contained" onPress={onGuardar} loading={guardando} disabled={guardando} style={styles.boton}>

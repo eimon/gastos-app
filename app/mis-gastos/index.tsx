@@ -4,6 +4,7 @@ import { View, StyleSheet, FlatList, type ListRenderItemInfo } from 'react-nativ
 import { ActivityIndicator, Appbar, Chip, FAB, List, Text } from 'react-native-paper'
 import { router } from 'expo-router'
 
+import { ErrorReintentar } from '../../components/ErrorReintentar'
 import { useMonth } from '../../contexts/MonthContext'
 import { useServicio } from '../../hooks/useServicio'
 import * as gastosService from '../../services/gastosService'
@@ -37,7 +38,7 @@ const irATarjetas = () => router.push('/tarjetas')
 
 export default function MisGastosScreen() {
   const { mesActual, añoActual, navegarMesAnterior, navegarMesSiguiente } = useMonth()
-  const { datos: cuotas, cargando, error } = useServicio(
+  const { datos: cuotas, cargando, error, recargar } = useServicio(
     () => gastosService.listarDelMes(mesActual, añoActual),
     [mesActual, añoActual],
   )
@@ -65,12 +66,10 @@ export default function MisGastosScreen() {
           <ActivityIndicator size="large" />
         </View>
       ) : error ? (
-        <View style={styles.centro}>
-          <Text>No se pudieron cargar los gastos.</Text>
-        </View>
+        <ErrorReintentar mensaje="No se pudieron cargar los gastos." onReintentar={recargar} />
       ) : !cuotas || cuotas.length === 0 ? (
         <View style={styles.centro}>
-          <Text>No hay gastos con vencimiento este mes. Use el botón + para agregar uno.</Text>
+          <Text>No hay gastos con vencimiento este mes. Tocar + para agregar uno.</Text>
         </View>
       ) : (
         <FlatList data={cuotas} keyExtractor={claveCuota} renderItem={renderCuota} />

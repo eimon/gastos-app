@@ -4,9 +4,10 @@ import { View, StyleSheet, FlatList, type ListRenderItemInfo } from 'react-nativ
 import { ActivityIndicator, Appbar, Card, Chip, List, Text } from 'react-native-paper'
 import { router, useLocalSearchParams } from 'expo-router'
 
+import { ErrorReintentar } from '../../components/ErrorReintentar'
 import { useServicio } from '../../hooks/useServicio'
 import * as gastosService from '../../services/gastosService'
-import { formatearFecha, formatearMonto, type CuotaDetalle, type DetalleGasto, type ParteDetalle } from '../../services/gastoVista'
+import { etiquetaTipoDescuento, formatearFecha, formatearMonto, type CuotaDetalle, type DetalleGasto, type ParteDetalle } from '../../services/gastoVista'
 import type { EstadoPago } from '../../domain/pagos'
 
 const ETIQUETA_ESTADO: Record<EstadoPago, string> = {
@@ -18,7 +19,7 @@ const ETIQUETA_ESTADO: Record<EstadoPago, string> = {
 function Parte({ parte }: { parte: ParteDetalle }) {
   return (
     <List.Item
-      title={parte.esUsuario ? `${parte.nombre} (tu parte, informativa)` : parte.nombre}
+      title={parte.esUsuario ? `${parte.nombre} (parte propia, informativa)` : parte.nombre}
       description={formatearMonto(parte.montoCents)}
       right={() => (parte.resumen ? <Chip compact>{ETIQUETA_ESTADO[parte.resumen.estado]}</Chip> : null)}
     />
@@ -49,7 +50,7 @@ function Encabezado({ detalle }: { detalle: DetalleGasto }) {
         <Text>Total: {formatearMonto(detalle.gasto.montoTotalCents)}</Text>
         {detalle.gasto.descuentoCents > 0 && (
           <Text>
-            Descuento: {formatearMonto(detalle.gasto.descuentoCents)} ({detalle.gasto.tipoDescuento})
+            Descuento: {formatearMonto(detalle.gasto.descuentoCents)} ({etiquetaTipoDescuento(detalle.gasto.tipoDescuento)})
           </Text>
         )}
         <Text>Tarjeta: {detalle.tarjetaNombre ?? 'Sin tarjeta'}</Text>
@@ -61,7 +62,7 @@ function Encabezado({ detalle }: { detalle: DetalleGasto }) {
 
 export default function DetalleGastoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { datos: detalle, cargando } = useServicio(() => (id ? gastosService.obtenerDetalle(id) : undefined), [id])
+  const { datos: detalle, cargando, error, recargar } = useServicio(() => (id ? gastosService.obtenerDetalle(id) : undefined), [id])
 
   return (
     <View style={styles.container}>
@@ -74,6 +75,8 @@ export default function DetalleGastoScreen() {
         <View style={styles.centro}>
           <ActivityIndicator size="large" />
         </View>
+      ) : error && !detalle ? (
+        <ErrorReintentar mensaje="No se pudo cargar el gasto." onReintentar={recargar} />
       ) : !detalle ? (
         <View style={styles.centro}>
           <Text>No se encontró el gasto.</Text>
