@@ -134,6 +134,15 @@ export function crear(exec: Executor, input: InputCrearGasto): GastoConDetalle {
  * participantes/cuotas/shares safe (no pago can be left dangling).
  */
 export function actualizarCompleto(exec: Executor, id: string, input: InputCrearGasto): GastoConDetalle {
+  // Cancelled (soft-deleted) pagos still reference their share through a
+  // foreign key, so they must go before the shares do. They are tombstones of
+  // shares that are being replaced anyway.
+  exec
+    .delete(pagos)
+    .where(
+      sql`${pagos.cuotaParticipanteId} IN (SELECT ${cuotaParticipantes.id} FROM ${cuotaParticipantes} INNER JOIN ${gastoCuotas} ON ${cuotaParticipantes.gastoCuotaId} = ${gastoCuotas.id} WHERE ${gastoCuotas.gastoId} = ${id}) AND ${pagos.deletedAt} IS NOT NULL`,
+    )
+    .run();
   exec
     .delete(cuotaParticipantes)
     .where(
@@ -230,6 +239,15 @@ export function obtenerConDetalle(exec: Executor, id: string): GastoConDetalle |
   }));
 
   return { gasto, participantes, cuotas };
+}
+
+/** Soft delete: the gasto disappears from every read but its rows stay. */
+export function eliminar(exec: Executor, id: string): void {
+  exec
+    .update(gastos)
+    .set({ deletedAt: sql`(current_timestamp)`, updatedAt: sql`(current_timestamp)` })
+    .where(eq(gastos.id, id))
+    .run();
 }
 
 /** Only the description stays editable once a gasto has recorded repayments. */

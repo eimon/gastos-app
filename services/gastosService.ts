@@ -8,7 +8,15 @@ import * as pagosRepo from '../data/repositories/pagosRepo';
 import * as tarjetasRepo from '../data/repositories/tarjetasRepo';
 import { emitirCambio } from './cambios';
 import { armarDetalleGasto, rangoDelMes, type DetalleGasto } from './gastoVista';
-import { NOMBRE_USUARIO_POR_DEFECTO, construirCuotasRepo, construirParticipantes } from './gastoPlanMapper';
+import { construirCuotasRepo, construirParticipantes } from './gastoPlanMapper';
+import {
+  GastoRechazadoError,
+  construirEdicion,
+  exigirSinPagos,
+  valoresDesdeDetalle,
+  type NucleoGasto,
+} from './gastoEdicion';
+import { MENSAJES_ERROR_GASTO, type ValoresGastoForm } from './gastoFormulario';
 
 export interface InputCrearGasto {
   tipo: TipoGasto;
@@ -145,110 +153,85 @@ export async function obtenerDetalle(id: string): Promise<DetalleGasto | undefin
   return armarDetalleGasto(detalle, pagosPorParte, tarjeta?.nombre ?? null);
 }
 
-export type ErrorEditarGasto = 'BLOQUEADO_POR_PAGO' | 'GASTO_NO_ENCONTRADO';
-
 export interface InputEditarGasto {
   descripcion: string;
-  montoTotalCents?: Centavos;
-  descuentoCents?: Centavos;
-  tipoDescuento?: TipoDescuento | null;
-  cuotas?: number;
-  tarjetaId?: string | null;
-  /** Other participants' names, excluding the user. Only meaningful when `tipo` is 'compartido'. */
-  participantes?: string[];
+  /** Omitted: description-only edit, the only edit allowed once any pago exists. */
+  nucleo?: NucleoGasto;
 }
 
 /**
- * The description is always editable. Editing amount, cuotas, tarjeta or
- * participantes is rejected once any pago has been recorded against this
- * gasto's shares (spec: Shared Gasto Immutability After Repayments) — the
- * gate guarantees that when a core-field edit is allowed, zero pagos exist,
- * so replacing cuotas/participantes can never orphan a pago row.
+ * The description is always editable. Any other field (amount, discount,
+ * cuotas, date, card, participants, custom amounts) is rejected once a live
+ * pago exists on this gasto's shares (spec: Shared Gasto Immutability After
+ * Repayments). That gate guarantees that replacing cuotas and participantes
+ * can never orphan a pago.
  */
 export async function editar(id: string, input: InputEditarGasto): Promise<void> {
-  const cambiaCampoNucleo =
-    input.montoTotalCents !== undefined ||
-    input.descuentoCents !== undefined ||
-    input.tipoDescuento !== undefined ||
-    input.cuotas !== undefined ||
-    input.tarjetaId !== undefined ||
-    input.participantes !== undefined;
-
-  if (!cambiaCampoNucleo) {
-    gastosRepo.actualizarDescripcion(db, id, input.descripcion);
+  const { nucleo } = input;
+  if (!nucleo) {
+    if (input.descripcion.trim() === '') {
+      throw new Error(MENSAJES_ERROR_GASTO.DESCRIPCION_REQUERIDA);
+    }
+    gastosRepo.actualizarDescripcion(db, id, input.descripcion.trim());
     emitirCambio();
     return;
   }
 
-  // The tieneAlgunPago check, the current-state read and the write all run
-  // INSIDE this one transaction (matching pagosService.registrar's pattern)
-  // so the decision to allow the edit and the edit itself see the same
-  // transactional snapshot — no other write can land between the check and
-  // the write.
+  // The pago check, the current-state read and the write all run INSIDE this
+  // one transaction (matching pagosService.registrar's pattern), so a pago
+  // landing between the check and the write is impossible.
   db.transaction((tx) => {
-    if (gastosRepo.tieneAlgunPago(tx, id)) {
-      const error: Error & { code?: ErrorEditarGasto } = new Error(
-        'No se puede editar el monto, las cuotas ni los participantes: ya hay pagos registrados.',
-      );
-      error.code = 'BLOQUEADO_POR_PAGO';
-      throw error;
-    }
+    exigirSinPagos(gastosRepo.tieneAlgunPago(tx, id), 'BLOQUEADO_POR_PAGO');
 
     const actual = gastosRepo.obtenerConDetalle(tx, id);
     if (!actual) {
-      const error: Error & { code?: ErrorEditarGasto } = new Error('Gasto no encontrado.');
-      error.code = 'GASTO_NO_ENCONTRADO';
-      throw error;
+      throw new GastoRechazadoError('GASTO_NO_ENCONTRADO');
     }
 
-    const montoTotalCents = input.montoTotalCents ?? actual.gasto.montoTotalCents;
-    const descuentoCents = input.descuentoCents ?? actual.gasto.descuentoCents;
-    const tipoDescuento =
-      input.tipoDescuento !== undefined ? input.tipoDescuento : (actual.gasto.tipoDescuento as TipoDescuento | null);
-    const cuotasCount = input.cuotas ?? actual.gasto.cantidadCuotas;
-    const tarjetaId = input.tarjetaId !== undefined ? input.tarjetaId : actual.gasto.tarjetaId;
-    const tipo = actual.gasto.tipo as TipoGasto;
-    const nombresParticipantes =
-      input.participantes ?? actual.participantes.filter((p) => !p.esUsuario).map((p) => p.nombre);
-    const nombreUsuario = actual.participantes.find((p) => p.esUsuario)?.nombre ?? NOMBRE_USUARIO_POR_DEFECTO;
+    // An archived card is only acceptable when this gasto already uses it.
+    const tarjeta =
+      nucleo.tarjetaId === actual.gasto.tarjetaId
+        ? resolverTarjeta(tx, nucleo.tarjetaId)
+        : resolverTarjetaParaCrear(tx, nucleo.tarjetaId);
 
-    const plan = planificarGasto({
-      tipo,
-      fechaCompra: actual.gasto.fechaCompra,
-      montoTotalCents,
-      descuentoCents,
-      tipoDescuento,
-      cuotas: cuotasCount,
-      // Plain resolverTarjeta (not resolverTarjetaParaCrear): a gasto that
-      // already references a since-archived card must keep working.
-      tarjeta: resolverTarjeta(tx, tarjetaId),
-      participantes: tipo === 'compartido' ? nombresParticipantes : [],
-    });
-
-    const participantes = construirParticipantes({
-      tipo,
-      participantes: nombresParticipantes,
-      nombreUsuario,
-    });
-    const cuotas = construirCuotasRepo(plan, participantes.length);
-
-    return gastosRepo.actualizarCompleto(tx, id, {
-      descripcion: input.descripcion,
-      fechaCompra: actual.gasto.fechaCompra,
-      tipo,
-      montoTotalCents,
-      descuentoCents,
-      tipoDescuento,
-      cantidadCuotas: cuotasCount,
-      tarjetaId,
-      participantes,
-      cuotas,
-    });
+    return gastosRepo.actualizarCompleto(tx, id, construirEdicion(actual, input.descripcion, nucleo, tarjeta));
   });
 
   emitirCambio();
 }
 
-export async function puedeEditarMontoYCuotas(id: string): Promise<boolean> {
-  return !gastosRepo.tieneAlgunPago(db, id);
+/**
+ * Soft-deletes the gasto. Blocked while any live pago exists: the user must
+ * cancel ("anular") every payment first. The check and the delete share one tx.
+ */
+export async function eliminar(id: string): Promise<void> {
+  db.transaction((tx) => {
+    exigirSinPagos(gastosRepo.tieneAlgunPago(tx, id), 'ELIMINAR_CON_PAGOS');
+    gastosRepo.eliminar(tx, id);
+  });
+  emitirCambio();
+}
+
+export interface DatosEdicion {
+  valores: ValoresGastoForm;
+  /** Stored gasto, used to preview the dates that editing will keep. */
+  original: gastosRepo.GastoConDetalle;
+  /** With any pago only the description can change. */
+  tienePagos: boolean;
+  /** The card already linked to the gasto, even when archived. */
+  tarjetaVinculada: tarjetasRepo.Tarjeta | undefined;
+}
+
+export async function obtenerParaEdicion(id: string): Promise<DatosEdicion | undefined> {
+  const original = gastosRepo.obtenerConDetalle(db, id);
+  if (!original) {
+    return undefined;
+  }
+
+  return {
+    valores: valoresDesdeDetalle(original),
+    original,
+    tienePagos: gastosRepo.tieneAlgunPago(db, id),
+    tarjetaVinculada: original.gasto.tarjetaId ? tarjetasRepo.obtener(db, original.gasto.tarjetaId) : undefined,
+  };
 }
