@@ -10,6 +10,7 @@ import type { MedioPago } from '../data/repositories/pagosRepo'
 import { aCentavos, fechaHoyISO } from '../services/gastoFormulario'
 import { aFechaISOLocal, deFechaISOLocal } from '../services/fechaLocal'
 import { formatearFecha, formatearMonto, type ParteDetalle } from '../services/gastoVista'
+import { emitirCambio } from '../services/cambios'
 import { errorMontoPago, mensajePagoRechazado } from '../services/pagoFormulario'
 import * as pagosService from '../services/pagosService'
 
@@ -69,7 +70,11 @@ export function DialogoPago({ parte, modo, onCerrar }: Props) {
       })
       onCerrar()
     } catch (err) {
-      setError(mensajePagoRechazado(err, restante) ?? 'No se pudo registrar el pago.')
+      const rechazo = mensajePagoRechazado(err, restante)
+      // A rules rejection means the screen's data is stale: reload so the dialog and the
+      // detail show the fresh remaining amount instead of the old one.
+      if (rechazo) emitirCambio()
+      setError(rechazo ?? 'No se pudo registrar el pago.')
     } finally {
       enviandoRef.current = false
       setEnviando(false)
