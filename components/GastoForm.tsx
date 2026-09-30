@@ -8,6 +8,7 @@ import { router } from 'expo-router'
 
 import { CampoMonto } from './CampoMonto'
 import { ParticipantesForm } from './ParticipantesForm'
+import { useAlturaTeclado } from '../hooks/useAlturaTeclado'
 import { useServicio } from '../hooks/useServicio'
 import * as tarjetasService from '../services/tarjetasService'
 import {
@@ -69,6 +70,7 @@ function Bloqueable({ bloqueado, children }: { bloqueado: boolean; children: Rea
 
 export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar, soloDescripcion = false, original, tarjetaVinculada }: Props) {
   const { datos: tarjetas } = useServicio(tarjetasService.listar)
+  const alturaTeclado = useAlturaTeclado()
   const [valores, setValores] = useState<ValoresGastoForm>(valoresIniciales)
   const [intentoGuardar, setIntentoGuardar] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -137,7 +139,8 @@ export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar, s
   }
 
   return (
-    <View style={styles.container}>
+    // Bottom padding of the keyboard height shrinks the ScrollView so the focused field scrolls into view.
+    <View style={[styles.container, { paddingBottom: alturaTeclado }]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={router.back} />
         <Appbar.Content title={titulo} />
