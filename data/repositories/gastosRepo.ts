@@ -205,7 +205,7 @@ export function listarCuotasEntre(exec: Executor, desde: string, hasta: string):
     .where(
       and(isNull(gastos.deletedAt), gte(gastoCuotas.fechaVencimiento, desde), lte(gastoCuotas.fechaVencimiento, hasta)),
     )
-    .orderBy(asc(gastoCuotas.fechaVencimiento), asc(sql`${gastos.descripcion} COLLATE NOCASE`), asc(gastoCuotas.numero))
+    .orderBy(asc(gastoCuotas.fechaVencimiento), asc(gastoCuotas.numero))
     .all();
 }
 

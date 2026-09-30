@@ -7,6 +7,7 @@ import * as gastosRepo from '../data/repositories/gastosRepo';
 import * as pagosRepo from '../data/repositories/pagosRepo';
 import * as tarjetasRepo from '../data/repositories/tarjetasRepo';
 import { emitirCambio } from './cambios';
+import { ordenarPorVencimientoYNombre } from './orden';
 import { armarDetalleGasto, rangoDelMes, type DetalleGasto, type PagoDetalle } from './gastoVista';
 import { construirCuotasRepo, construirParticipantes } from './gastoPlanMapper';
 import {
@@ -134,7 +135,7 @@ export async function obtener(id: string): Promise<gastosRepo.GastoConDetalle | 
 /** Cuotas whose due date falls in the given month (`mes` 1-12), for the month-scoped list. */
 export async function listarDelMes(mes: number, anio: number): Promise<gastosRepo.CuotaListada[]> {
   const { desde, hasta } = rangoDelMes(mes, anio);
-  return gastosRepo.listarCuotasEntre(db, desde, hasta);
+  return ordenarPorVencimientoYNombre(gastosRepo.listarCuotasEntre(db, desde, hasta), (cuota) => cuota.descripcion);
 }
 
 /** Read-only detail: cuota schedule, each participant's share and its derived payment status. */

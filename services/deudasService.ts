@@ -16,6 +16,7 @@ import {
 import { valoresDesdeDeuda, type ValoresDeudaForm } from './deudaFormulario';
 import { armarDetalleDeuda, armarFilasDeudaMes, type DetalleDeuda, type FilaDeudaMes } from './deudaVista';
 import { rangoDelMes, type PagoDetalle } from './gastoVista';
+import { ordenarPorVencimientoYNombre } from './orden';
 
 export type InputCrearDeuda = InputDeuda;
 
@@ -42,7 +43,8 @@ export async function crear(input: InputCrearDeuda): Promise<deudasRepo.DeudaCon
 /** Cuotas due in the given month (`mes` 1-12). */
 export async function listarDelMes(mes: number, anio: number): Promise<FilaDeudaMes[]> {
   const { desde, hasta } = rangoDelMes(mes, anio);
-  return armarFilasDeudaMes(deudasRepo.listarCuotasEntre(db, desde, hasta));
+  const cuotas = deudasRepo.listarCuotasEntre(db, desde, hasta);
+  return armarFilasDeudaMes(ordenarPorVencimientoYNombre(cuotas, (cuota) => cuota.acreedor));
 }
 
 export async function obtenerDetalle(id: string): Promise<DetalleDeuda | undefined> {

@@ -93,7 +93,7 @@ export function listarCuotasEntre(exec: Executor, desde: string, hasta: string):
     .from(deudaCuotas)
     .innerJoin(deudas, eq(deudaCuotas.deudaId, deudas.id))
     .where(and(isNull(deudas.deletedAt), gte(deudaCuotas.fechaVencimiento, desde), lte(deudaCuotas.fechaVencimiento, hasta)))
-    .orderBy(asc(deudaCuotas.fechaVencimiento), asc(sql`${deudas.acreedor} COLLATE NOCASE`), asc(deudaCuotas.numero))
+    .orderBy(asc(deudaCuotas.fechaVencimiento), asc(deudaCuotas.numero))
     .all();
   if (filas.length === 0) {
     return [];

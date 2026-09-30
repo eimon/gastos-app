@@ -48,14 +48,12 @@ describeConSqlite('deudasRepo against real SQLite (foreign keys ON)', () => {
     expect(mes.map((c) => c.pagadoCents)).toEqual([5_000, 1_000]);
   });
 
-  test('deleted deudas are not listed and the acreedor order ignores case', () => {
-    crear('beta', '2026-06-01', ['2026-06-01']);
-    crear('Alfa', '2026-06-01', ['2026-06-01']);
-    crear('charly', '2026-06-01', ['2026-06-01']);
+  test('deleted deudas are not listed', () => {
+    crear('Activa', '2026-06-01', ['2026-06-01']);
     const borrada = crear('Borrada', '2026-06-01', ['2026-06-01']);
     deudasRepo.eliminar(db, borrada.deuda.id);
 
-    expect(deudasRepo.listarCuotasEntre(db, '2026-06-01', '2026-06-30').map((c) => c.acreedor)).toEqual(['Alfa', 'beta', 'charly']);
+    expect(deudasRepo.listarCuotasEntre(db, '2026-06-01', '2026-06-30').map((c) => c.acreedor)).toEqual(['Activa']);
   });
 
   test('tieneAlgunPago ignores anulado pagos and pagos of other deudas', () => {
@@ -93,6 +91,31 @@ describeConSqlite('deudasRepo against real SQLite (foreign keys ON)', () => {
     const ids = db.select().from(pagos).all().map((p) => p.id);
     expect(ids).not.toContain(anuladoA.id);
     expect(ids).toContain(anuladoB.id);
+  });
+
+  test('actualizarCompleto never deletes a LIVE pago: the FK blocks replacing the cuotas and nothing changes', () => {
+    const a = crear('A', '2026-08-01', ['2026-08-01']);
+    const vivo = pagar(a.cuotas[0].id, 1_000);
+    const anulado = pagar(a.cuotas[0].id, 2_000);
+    pagosRepo.anular(db, anulado.id);
+
+    expect(() =>
+      db.transaction((tx) =>
+        deudasRepo.actualizarCompleto(tx, a.deuda.id, {
+          acreedor: 'A',
+          descripcion: 'desc',
+          montoTotalCents: 10_000,
+          cantidadCuotas: 1,
+          fechaPrimerPago: '2026-08-01',
+          cuotas: [{ numero: 1, montoCents: 10_000, fechaVencimiento: '2026-08-01' }],
+        }),
+      ),
+    ).toThrow();
+
+    const filas = db.select().from(pagos).all();
+    expect(filas.find((p) => p.id === vivo.id)?.deletedAt).toBeNull();
+    expect(filas.find((p) => p.id === anulado.id)?.deletedAt).not.toBeNull();
+    expect(deudasRepo.obtenerConCuotas(db, a.deuda.id)?.cuotas).toHaveLength(1);
   });
 
   test('the database itself rejects deleting a cuota that still has a pago (foreign keys are ON)', () => {
