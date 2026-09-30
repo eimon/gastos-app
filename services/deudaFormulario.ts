@@ -4,7 +4,14 @@
  * this module only adapts raw form values to the domain input and maps error
  * codes to user-facing messages.
  */
-import { planificarDeuda, validarDeuda, type ErrorDeuda, type InputDeuda, type PlanDeuda } from '../domain/deuda';
+import {
+  planificarDeuda,
+  validarDeuda,
+  type CuotaDeudaPlan,
+  type ErrorDeuda,
+  type InputDeuda,
+  type PlanDeuda,
+} from '../domain/deuda';
 import { MAX_CUOTAS, MAX_MONTO_CENTS } from '../domain/limites';
 import type { Deuda } from '../data/repositories/deudasRepo';
 import { aCentavos, fechaHoyISO } from './gastoFormulario';
@@ -73,4 +80,21 @@ export function evaluarFormularioDeuda(valores: ValoresDeudaForm): EvaluacionDeu
 /** Before the first save attempt only the date and cuotas errors show live; afterwards every error does. */
 export function erroresVisiblesDeuda(errores: ErrorDeuda[], intentoGuardar: boolean): ErrorDeuda[] {
   return intentoGuardar ? errores : errores.filter((e) => e === 'FECHA_INVALIDA' || e === 'CUOTAS_INVALIDA');
+}
+
+const CUOTAS_VISIBLES = 12;
+
+/**
+ * A 30-year loan has 360 cuotas, too many to render as a preview: show the first ones, how many
+ * are hidden, and ALWAYS the last (the one that absorbs the leftover cents).
+ */
+export function resumirPlanDeuda(cuotas: CuotaDeudaPlan[]): { primeras: CuotaDeudaPlan[]; ocultas: number; ultima: CuotaDeudaPlan | null } {
+  if (cuotas.length <= CUOTAS_VISIBLES) {
+    return { primeras: cuotas, ocultas: 0, ultima: null };
+  }
+  return {
+    primeras: cuotas.slice(0, CUOTAS_VISIBLES - 1),
+    ocultas: cuotas.length - CUOTAS_VISIBLES,
+    ultima: cuotas[cuotas.length - 1],
+  };
 }
