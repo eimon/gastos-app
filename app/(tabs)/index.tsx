@@ -67,7 +67,7 @@ export default function MisGastosScreen() {
           <Text>No hay gastos con vencimiento este mes. Tocar + para agregar uno.</Text>
         </View>
       ) : (
-        <FlatList data={cuotas} keyExtractor={claveCuota} renderItem={renderCuota} />
+        <FlatList data={cuotas} keyExtractor={claveCuota} renderItem={renderCuota} contentContainerStyle={styles.lista} />
       )}
 
       <FAB icon="plus" label="Nuevo gasto" style={styles.fab} onPress={irANuevoGasto} />
@@ -95,6 +95,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+  },
+  // Room below the last row so the FAB never covers it.
+  lista: {
+    paddingBottom: 88,
   },
   fab: {
     position: 'absolute',

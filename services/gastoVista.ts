@@ -33,6 +33,17 @@ export function rangoDelMes(mes: number, anio: number): { desde: string; hasta: 
   return { desde: `${anio}-${mesTexto}-01`, hasta: `${anio}-${mesTexto}-${String(ultimoDia).padStart(2, '0')}` };
 }
 
+/** Month (1-12) and year of a `YYYY-MM-DD` date. */
+export function mesDeFecha(fecha: string): { mes: number; año: number } {
+  const [año, mes] = fecha.split('-').map(Number);
+  return { mes, año };
+}
+
+/** Earliest due date among the cuotas of a just-created gasto or deuda, so the list can show it. */
+export function primerVencimiento(cuotas: { fechaVencimiento: string }[]): string {
+  return cuotas.map((cuota) => cuota.fechaVencimiento).reduce((primera, fecha) => (fecha < primera ? fecha : primera));
+}
+
 /** `123456` cents -> `$ 1.234,56`. */
 export function formatearMonto(centavos: number): string {
   const signo = centavos < 0 ? '-' : '';

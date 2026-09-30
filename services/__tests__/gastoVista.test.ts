@@ -5,7 +5,9 @@ import {
   etiquetaTipoDescuento,
   formatearFecha,
   formatearMonto,
+  mesDeFecha,
   nombreMes,
+  primerVencimiento,
   rangoDelMes,
 } from '../gastoVista';
 
@@ -73,5 +75,17 @@ describe('etiquetaTipoDescuento', () => {
     expect(etiquetaTipoDescuento('uniforme')).toBe('Uniforme');
     expect(etiquetaTipoDescuento('prorrateo')).toBe('Prorrateo');
     expect(etiquetaTipoDescuento(null)).toBe('');
+  });
+});
+
+describe('month of a new item', () => {
+  test('mesDeFecha reads the month and year of an ISO date', () => {
+    expect(mesDeFecha('2027-03-31')).toEqual({ mes: 3, año: 2027 });
+    expect(mesDeFecha('2026-12-01')).toEqual({ mes: 12, año: 2026 });
+  });
+
+  test('primerVencimiento is the earliest cuota due date whatever the order', () => {
+    const cuotas = [{ fechaVencimiento: '2027-02-28' }, { fechaVencimiento: '2026-12-31' }, { fechaVencimiento: '2027-01-31' }];
+    expect(primerVencimiento(cuotas)).toBe('2026-12-31');
   });
 });

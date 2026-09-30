@@ -64,7 +64,7 @@ export default function DeudasScreen() {
           <Text>No hay deudas con vencimiento este mes. Tocar + para agregar una.</Text>
         </View>
       ) : (
-        <FlatList data={cuotas} keyExtractor={claveCuota} renderItem={renderCuota} />
+        <FlatList data={cuotas} keyExtractor={claveCuota} renderItem={renderCuota} contentContainerStyle={styles.lista} />
       )}
 
       <FAB icon="plus" label="Nueva deuda" style={styles.fab} onPress={irANuevaDeuda} />
@@ -92,6 +92,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+  },
+  // Room below the last row so the FAB never covers it.
+  lista: {
+    paddingBottom: 88,
   },
   fab: {
     position: 'absolute',
