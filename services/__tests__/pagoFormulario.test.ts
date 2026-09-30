@@ -31,6 +31,19 @@ describe('mensajeCodigoPago', () => {
   });
 });
 
+describe('payments on a deuda cuota', () => {
+  test('uses cuota wording for the target errors and keeps the shared amount message', () => {
+    expect(errorMontoPago(1, 0, 'cuota')).toBe('Esta cuota ya está pagada.');
+    expect(mensajeCodigoPago('OBJETIVO_NO_ENCONTRADO', 0, 'cuota')).toBe('No se encontró la cuota a pagar.');
+    expect(errorMontoPago(150, 100_00, 'cuota')).toBe('El monto no puede superar lo que falta pagar ($ 100,00).');
+  });
+
+  test('maps a rejection for a deleted deuda', () => {
+    const err = Object.assign(new Error('x'), { codigos: ['DEUDA_ELIMINADA'] });
+    expect(mensajePagoRechazado(err, 0, 'cuota')).toBe('La deuda fue eliminada y ya no admite pagos.');
+  });
+});
+
 describe('mensajePagoRechazado', () => {
   const rechazo = (codigos: string[], restanteCents?: number) => Object.assign(new Error('x'), { codigos, restanteCents });
 

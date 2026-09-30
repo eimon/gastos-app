@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 
 import { estadoDePago, validarPago, type ErrorPago } from '../domain/pagos';
 import { db, type Transaction } from '../data/db/client';
-import { cuotaParticipantes, deudaCuotas, gastoCuotas, gastoParticipantes, gastos } from '../data/db/schema';
+import { cuotaParticipantes, deudaCuotas, deudas, gastoCuotas, gastoParticipantes, gastos } from '../data/db/schema';
 import * as pagosRepo from '../data/repositories/pagosRepo';
 import { emitirCambio } from './cambios';
 
@@ -18,7 +18,7 @@ export interface InputRegistrarPago {
   notas?: string | null;
 }
 
-export type CodigoErrorPago = ErrorPago | 'ES_USUARIO' | 'OBJETIVO_NO_ENCONTRADO' | 'GASTO_ELIMINADO';
+export type CodigoErrorPago = ErrorPago | 'ES_USUARIO' | 'OBJETIVO_NO_ENCONTRADO' | 'GASTO_ELIMINADO' | 'DEUDA_ELIMINADA';
 
 export class PagoRechazadoError extends Error {
   /** `restanteCents` is the fresh remaining amount seen inside the transaction, for amount errors. */
@@ -79,9 +79,18 @@ function verificarYRegistrar(tx: Transaction, input: InputRegistrarPago): pagosR
 
   const { deudaCuotaId } = input.objetivo;
 
-  const fila = tx.select({ montoCents: deudaCuotas.montoCents }).from(deudaCuotas).where(eq(deudaCuotas.id, deudaCuotaId)).get();
+  const fila = tx
+    .select({ montoCents: deudaCuotas.montoCents, deudaEliminadaEn: deudas.deletedAt })
+    .from(deudaCuotas)
+    .innerJoin(deudas, eq(deudaCuotas.deudaId, deudas.id))
+    .where(eq(deudaCuotas.id, deudaCuotaId))
+    .get();
   if (!fila) {
     throw new PagoRechazadoError(['OBJETIVO_NO_ENCONTRADO']);
+  }
+  // A deleted deuda can no longer receive pagos.
+  if (fila.deudaEliminadaEn) {
+    throw new PagoRechazadoError(['DEUDA_ELIMINADA']);
   }
 
   const pagosExistentes = pagosRepo.listarPorDeudaCuota(tx, deudaCuotaId).map((p) => p.montoCents);
