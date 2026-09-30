@@ -1,11 +1,11 @@
 // components/GastoForm.tsx - Formulario compartido de alta y edición de un gasto, con vista previa de cuotas
 import { useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import { View, StyleSheet, ScrollView } from 'react-native'
 import { Appbar, Button, Chip, HelperText, List, SegmentedButtons, Text, TextInput } from 'react-native-paper'
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 
+import { Bloqueable } from './Bloqueable'
 import { CampoMonto } from './CampoMonto'
 import { ParticipantesForm } from './ParticipantesForm'
 import { useAlturaTeclado } from '../hooks/useAlturaTeclado'
@@ -55,19 +55,6 @@ interface Props {
   original?: GastoConDetalle
   /** The card already linked to the gasto, offered even when archived. */
   tarjetaVinculada?: Tarjeta
-}
-
-/** Dims and blocks touches for everything the edit rules lock. */
-function Bloqueable({ bloqueado, children }: { bloqueado: boolean; children: ReactNode }) {
-  return (
-    <View
-      pointerEvents={bloqueado ? 'none' : 'auto'}
-      importantForAccessibility={bloqueado ? 'no-hide-descendants' : 'auto'}
-      style={bloqueado ? styles.bloqueado : undefined}
-    >
-      {children}
-    </View>
-  )
 }
 
 export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar, soloDescripcion = false, original, tarjetaVinculada }: Props) {
@@ -300,9 +287,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-  },
-  bloqueado: {
-    opacity: 0.5,
   },
   boton: {
     marginTop: 16,

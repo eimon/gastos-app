@@ -1,4 +1,4 @@
-// components/DialogoPago.tsx - Confirmación de un pago de un participante (total por defecto, o un monto parcial)
+// components/DialogoPago.tsx - Confirmación de un pago de una parte de un gasto o de una cuota de una deuda (total por defecto, o un monto parcial)
 import { useRef, useState } from 'react'
 import { StyleSheet } from 'react-native'
 import { Button, Dialog, HelperText, Portal, SegmentedButtons, Text } from 'react-native-paper'
@@ -9,9 +9,9 @@ import { useAlturaTeclado } from '../hooks/useAlturaTeclado'
 import type { MedioPago } from '../data/repositories/pagosRepo'
 import { aCentavos, fechaHoyISO } from '../services/gastoFormulario'
 import { aFechaISOLocal, deFechaISOLocal } from '../services/fechaLocal'
-import { formatearFecha, formatearMonto, type ParteDetalle } from '../services/gastoVista'
+import { formatearFecha, formatearMonto } from '../services/gastoVista'
 import { emitirCambio } from '../services/cambios'
-import { errorMontoPago, mensajePagoRechazado } from '../services/pagoFormulario'
+import { errorMontoPago, mensajePagoRechazado, type SujetoPago } from '../services/pagoFormulario'
 import * as pagosService from '../services/pagosService'
 
 export type ModoPago = 'total' | 'parcial'
@@ -22,14 +22,19 @@ const MEDIOS = [
 ]
 
 interface Props {
-  parte: ParteDetalle
+  objetivo: pagosService.ObjetivoPago
+  /** First line of the dialog, e.g. who owes what. */
+  encabezado: string
+  /** Remaining amount of the target when the dialog was built; the service re-checks it. */
+  restanteCents: number
+  /** Wording of the target errors; a share of a gasto by default. */
+  sujeto?: SujetoPago
   modo: ModoPago
   onCerrar: () => void
 }
 
 /** Mounted only while open, so every opening starts from a fresh state. */
-export function DialogoPago({ parte, modo, onCerrar }: Props) {
-  const restante = parte.resumen?.restante ?? 0
+export function DialogoPago({ objetivo, encabezado, restanteCents: restante, sujeto = 'parte', modo, onCerrar }: Props) {
   const alturaTeclado = useAlturaTeclado()
   const parcial = modo === 'parcial'
   const [monto, setMonto] = useState<number | null>(null)
@@ -40,7 +45,7 @@ export function DialogoPago({ parte, modo, onCerrar }: Props) {
   // A ref, not just state: two taps in the same frame both see enviando=false.
   const enviandoRef = useRef(false)
 
-  const errorMonto = parcial && monto !== null ? errorMontoPago(monto, restante) : null
+  const errorMonto = parcial && monto !== null ? errorMontoPago(monto, restante, sujeto) : null
 
   function abrirSelectorFecha() {
     DateTimePickerAndroid.open({
@@ -52,7 +57,7 @@ export function DialogoPago({ parte, modo, onCerrar }: Props) {
 
   async function confirmar() {
     if (enviandoRef.current) return
-    const invalido = parcial ? errorMontoPago(monto, restante) : null
+    const invalido = parcial ? errorMontoPago(monto, restante, sujeto) : null
     if (invalido) {
       setError(invalido)
       return
@@ -63,14 +68,14 @@ export function DialogoPago({ parte, modo, onCerrar }: Props) {
     setError(null)
     try {
       await pagosService.registrar({
-        objetivo: { tipo: 'participante', cuotaParticipanteId: parte.id },
+        objetivo,
         montoCents: parcial ? aCentavos(monto) : restante,
         medioPago: medio,
         fecha,
       })
       onCerrar()
     } catch (err) {
-      const rechazo = mensajePagoRechazado(err, restante)
+      const rechazo = mensajePagoRechazado(err, restante, sujeto)
       // A rules rejection means the screen's data is stale: reload so the dialog and the
       // detail show the fresh remaining amount instead of the old one.
       if (rechazo) emitirCambio()
@@ -87,7 +92,7 @@ export function DialogoPago({ parte, modo, onCerrar }: Props) {
       <Dialog visible onDismiss={enviando ? undefined : onCerrar} style={{ marginBottom: alturaTeclado }}>
         <Dialog.Title>{parcial ? 'Pagar otro monto' : 'Registrar pago'}</Dialog.Title>
         <Dialog.Content style={styles.contenido}>
-          <Text>{`${parte.nombre} debe ${formatearMonto(restante)}.`}</Text>
+          <Text>{encabezado}</Text>
           {parcial ? (
             <CampoMonto label="Monto a pagar" valor={monto} onCambiar={setMonto} />
           ) : (

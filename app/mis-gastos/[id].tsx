@@ -8,10 +8,10 @@ import { DialogoPago, type ModoPago } from '../../components/DialogoPago'
 import { ErrorReintentar } from '../../components/ErrorReintentar'
 import { useServicio } from '../../hooks/useServicio'
 import { showAlert, showConfirm } from '../../lib/alerts'
+import { ejecutar } from '../../lib/ejecutar'
 import * as gastosService from '../../services/gastosService'
 import * as pagosService from '../../services/pagosService'
 import { MENSAJES_ERROR_GASTO_GUARDADO } from '../../services/gastoEdicion'
-import { esErrorDeReglas } from '../../services/errorDominio'
 import {
   contarPagos,
   etiquetaTipoDescuento,
@@ -35,21 +35,6 @@ const ETIQUETA_MEDIO: Record<PagoDetalle['medioPago'], string> = { efectivo: 'Ef
 interface AccionesPago {
   onPagar: (parte: ParteDetalle, modo: ModoPago) => void
   onAnular: (pago: PagoDetalle) => void
-}
-
-// Module-level guard: a second tap before the first action settles is ignored.
-let ocupado = false
-
-async function ejecutar(accion: () => Promise<void>, mensajeError: string) {
-  if (ocupado) return
-  ocupado = true
-  try {
-    await accion()
-  } catch (err) {
-    showAlert('Error', esErrorDeReglas(err) ? err.message : mensajeError)
-  } finally {
-    ocupado = false
-  }
 }
 
 function Parte({ parte, onPagar, onAnular }: { parte: ParteDetalle } & AccionesPago) {
@@ -190,7 +175,15 @@ export default function DetalleGastoScreen() {
         />
       )}
 
-      {parteEnCurso && pagoEnCurso && <DialogoPago parte={parteEnCurso} modo={pagoEnCurso.modo} onCerrar={cerrarPago} />}
+      {parteEnCurso && pagoEnCurso && (
+        <DialogoPago
+          objetivo={{ tipo: 'participante', cuotaParticipanteId: parteEnCurso.id }}
+          encabezado={`${parteEnCurso.nombre} debe ${formatearMonto(parteEnCurso.resumen?.restante ?? 0)}.`}
+          restanteCents={parteEnCurso.resumen?.restante ?? 0}
+          modo={pagoEnCurso.modo}
+          onCerrar={cerrarPago}
+        />
+      )}
     </View>
   )
 }
