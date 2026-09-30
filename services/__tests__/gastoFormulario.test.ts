@@ -161,6 +161,11 @@ describe('evaluarFormulario', () => {
     expect(MENSAJES_ERROR_GASTO.CUOTAS_INVALIDA).toContain('360');
   });
 
+  test('an amount above the cap is rejected and the message states the maximum', () => {
+    expect(evaluarFormulario({ ...base, monto: 10_000_000_000 }, []).errores).toEqual(['MONTO_EXCESIVO']);
+    expect(MENSAJES_ERROR_GASTO.MONTO_EXCESIVO).toBe('El monto no puede superar $ 9.999.999.999,99.');
+  });
+
   test('an untouched form reports only the missing amount and description, never a discount error', () => {
     const vacio: ValoresGastoForm = { ...base, descripcion: '', monto: null };
     expect(evaluarFormulario(vacio, []).errores).toEqual(['DESCRIPCION_REQUERIDA', 'MONTO_INVALIDO']);
