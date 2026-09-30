@@ -26,6 +26,7 @@ const FilaCuota = memo(function FilaCuota({ cuota }: { cuota: FilaDeudaMes }) {
           {estado !== 'pagado' && <Text variant="bodySmall">{`Falta ${formatearMonto(restante)}`}</Text>}
         </View>
       )}
+      onPress={() => router.push(`/deuda/${cuota.deudaId}`)}
     />
   )
 })
