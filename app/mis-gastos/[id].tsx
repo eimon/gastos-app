@@ -145,7 +145,9 @@ export default function DetalleGastoScreen() {
           setSaliendo(false)
           throw err
         }
-        router.back()
+        // Never leave the spinner stuck when there is nothing to go back to (deep link, restored route).
+        if (router.canGoBack()) router.back()
+        else router.replace('/(tabs)')
       }, 'No se pudo eliminar el gasto.'),
     )
   }
@@ -160,8 +162,8 @@ export default function DetalleGastoScreen() {
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Detalle del gasto" />
-        {detalle && <Appbar.Action icon="pencil-outline" accessibilityLabel="Editar gasto" onPress={irAEditar} />}
-        {detalle && <Appbar.Action icon="delete-outline" accessibilityLabel="Eliminar gasto" onPress={eliminarGasto} />}
+        {detalle && !saliendo && <Appbar.Action icon="pencil-outline" accessibilityLabel="Editar gasto" onPress={irAEditar} />}
+        {detalle && !saliendo && <Appbar.Action icon="delete-outline" accessibilityLabel="Eliminar gasto" onPress={eliminarGasto} />}
       </Appbar.Header>
 
       <AvisoErrorRecarga visible={!!error && !!detalle} mensaje="No se pudo actualizar el gasto." onReintentar={recargar} />

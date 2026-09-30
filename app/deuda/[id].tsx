@@ -113,7 +113,9 @@ export default function DetalleDeudaScreen() {
           setSaliendo(false)
           throw err
         }
-        router.back()
+        // Never leave the spinner stuck when there is nothing to go back to (deep link, restored route).
+        if (router.canGoBack()) router.back()
+        else router.replace('/(tabs)/deudas')
       }, 'No se pudo eliminar la deuda.'),
     )
   }
@@ -126,8 +128,8 @@ export default function DetalleDeudaScreen() {
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Detalle de la deuda" />
-        {detalle && <Appbar.Action icon="pencil-outline" accessibilityLabel="Editar deuda" onPress={irAEditar} />}
-        {detalle && <Appbar.Action icon="delete-outline" accessibilityLabel="Eliminar deuda" onPress={eliminarDeuda} />}
+        {detalle && !saliendo && <Appbar.Action icon="pencil-outline" accessibilityLabel="Editar deuda" onPress={irAEditar} />}
+        {detalle && !saliendo && <Appbar.Action icon="delete-outline" accessibilityLabel="Eliminar deuda" onPress={eliminarDeuda} />}
       </Appbar.Header>
 
       <AvisoErrorRecarga visible={!!error && !!detalle} mensaje="No se pudo actualizar la deuda." onReintentar={recargar} />
