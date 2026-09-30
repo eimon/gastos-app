@@ -5,6 +5,7 @@ import { Button, Dialog, HelperText, Portal, SegmentedButtons, Text } from 'reac
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 
 import { CampoMonto } from './CampoMonto'
+import { useAlturaTeclado } from '../hooks/useAlturaTeclado'
 import type { MedioPago } from '../data/repositories/pagosRepo'
 import { aCentavos, fechaHoyISO } from '../services/gastoFormulario'
 import { aFechaISOLocal, deFechaISOLocal } from '../services/fechaLocal'
@@ -28,6 +29,7 @@ interface Props {
 /** Mounted only while open, so every opening starts from a fresh state. */
 export function DialogoPago({ parte, modo, onCerrar }: Props) {
   const restante = parte.resumen?.restante ?? 0
+  const alturaTeclado = useAlturaTeclado()
   const parcial = modo === 'parcial'
   const [monto, setMonto] = useState<number | null>(null)
   const [medio, setMedio] = useState<MedioPago>('efectivo')
@@ -74,9 +76,10 @@ export function DialogoPago({ parte, modo, onCerrar }: Props) {
     }
   }
 
+  // The dialog is centered, so a bottom margin of the keyboard height lifts it above the keyboard.
   return (
     <Portal>
-      <Dialog visible onDismiss={enviando ? undefined : onCerrar}>
+      <Dialog visible onDismiss={enviando ? undefined : onCerrar} style={{ marginBottom: alturaTeclado }}>
         <Dialog.Title>{parcial ? 'Pagar otro monto' : 'Registrar pago'}</Dialog.Title>
         <Dialog.Content style={styles.contenido}>
           <Text>{`${parte.nombre} debe ${formatearMonto(restante)}.`}</Text>
