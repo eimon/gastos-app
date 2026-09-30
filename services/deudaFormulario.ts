@@ -84,6 +84,9 @@ export function erroresVisiblesDeuda(errores: ErrorDeuda[], intentoGuardar: bool
 
 const CUOTAS_VISIBLES = 12;
 
+/** "… 1 cuota más" versus "… N cuotas más". */
+export const textoCuotasOcultas = (ocultas: number): string => `… ${ocultas} ${ocultas === 1 ? 'cuota más' : 'cuotas más'}`;
+
 /**
  * A 30-year loan has 360 cuotas, too many to render as a preview: show the first ones, how many
  * are hidden, and ALWAYS the last (the one that absorbs the leftover cents).

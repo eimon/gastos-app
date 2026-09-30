@@ -4,6 +4,7 @@ import {
   erroresVisiblesDeuda,
   evaluarFormularioDeuda,
   resumirPlanDeuda,
+  textoCuotasOcultas,
   valoresDesdeDeuda,
   valoresInicialesDeuda,
   type ValoresDeudaForm,
@@ -81,6 +82,12 @@ test('valoresDesdeDeuda loads a stored deuda back into the form', () => {
     cuotas: '12',
     fechaPrimerPago: '2026-05-10',
   });
+});
+
+test('the hidden cuotas text uses the singular for exactly one', () => {
+  expect(textoCuotasOcultas(1)).toBe('… 1 cuota más');
+  expect(textoCuotasOcultas(2)).toBe('… 2 cuotas más');
+  expect(resumirPlanDeuda(evaluarFormularioDeuda(valores({ cuotas: '13' })).plan!.cuotas).ocultas).toBe(1);
 });
 
 describe('resumirPlanDeuda', () => {

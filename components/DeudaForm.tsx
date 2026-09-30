@@ -14,6 +14,7 @@ import {
   erroresVisiblesDeuda,
   evaluarFormularioDeuda,
   resumirPlanDeuda,
+  textoCuotasOcultas,
   type ValoresDeudaForm,
 } from '../services/deudaFormulario'
 import { esErrorDeReglas } from '../services/errorDominio'
@@ -64,8 +65,13 @@ export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
       router.back()
     } catch (err) {
       // A rules rejection means the screen's data is stale: reload it.
-      if (esErrorDeReglas(err)) emitirCambio()
-      showAlert('Error', err instanceof Error ? err.message : 'No se pudo guardar la deuda.')
+      if (esErrorDeReglas(err)) {
+        emitirCambio()
+        showAlert('Error', err.message)
+      } else {
+        console.error(err)
+        showAlert('Error', 'No se pudo guardar la deuda.')
+      }
     } finally {
       guardandoRef.current = false
       setGuardando(false)
@@ -124,7 +130,7 @@ export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
             ))}
             {resumen.ultima && (
               <>
-                <List.Item title={`… ${resumen.ocultas} cuotas más`} />
+                <List.Item title={textoCuotasOcultas(resumen.ocultas)} />
                 <List.Item
                   title={`Cuota ${resumen.ultima.numero} de ${plan.cuotas.length} · ${formatearMonto(resumen.ultima.montoCents)}`}
                   description={`Vence el ${formatearFecha(resumen.ultima.fechaVencimiento)}`}

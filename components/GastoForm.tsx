@@ -26,6 +26,8 @@ import type { GastoConDetalle } from '../data/repositories/gastosRepo'
 import type { Tarjeta } from '../data/repositories/tarjetasRepo'
 import { conservarVencimientos, MENSAJES_ERROR_GASTO_GUARDADO } from '../services/gastoEdicion'
 import { showAlert } from '../lib/alerts'
+import { emitirCambio } from '../services/cambios'
+import { esErrorDeReglas } from '../services/errorDominio'
 
 const TIPOS = [
   { value: 'personal', label: 'Personal' },
@@ -131,7 +133,13 @@ export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar, s
       await onGuardar(valores)
       router.back()
     } catch (err) {
-      showAlert('Error', err instanceof Error ? err.message : 'No se pudo guardar el gasto')
+      if (esErrorDeReglas(err)) {
+        emitirCambio()
+        showAlert('Error', err.message)
+      } else {
+        console.error(err)
+        showAlert('Error', 'No se pudo guardar el gasto.')
+      }
     } finally {
       guardandoRef.current = false
       setGuardando(false)
