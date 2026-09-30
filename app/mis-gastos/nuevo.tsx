@@ -1,10 +1,12 @@
 // app/mis-gastos/nuevo.tsx - Alta de un gasto (personal o compartido) con vista previa de cuotas
-import { useRef, useState, type ComponentProps } from 'react'
+import { useRef, useState } from 'react'
 import { View, StyleSheet, ScrollView } from 'react-native'
 import { Appbar, Button, Chip, HelperText, List, SegmentedButtons, Text, TextInput } from 'react-native-paper'
-import CurrencyInput from 'react-native-currency-input'
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 
+import { CampoMonto } from '../../components/CampoMonto'
+import { ParticipantesForm } from '../../components/ParticipantesForm'
 import { useServicio } from '../../hooks/useServicio'
 import * as gastosService from '../../services/gastosService'
 import * as tarjetasService from '../../services/tarjetasService'
@@ -12,12 +14,15 @@ import {
   MENSAJES_ERROR_GASTO,
   construirInputCrear,
   erroresVisibles,
+  esRepartoPersonalizado,
   evaluarFormulario,
   fechaHoyISO,
-  type FilaParticipante,
+  montosPersonalizadosCents,
   type ValoresGastoForm,
 } from '../../services/gastoFormulario'
 import { formatearFecha, formatearMonto } from '../../services/gastoVista'
+import { aFechaISOLocal, deFechaISOLocal } from '../../services/fechaLocal'
+import { sumarMontos } from '../../domain/participantes'
 import { showAlert } from '../../lib/alerts'
 
 const TIPOS = [
@@ -29,32 +34,10 @@ const TIPOS_DESCUENTO = [
   { value: 'prorrateo', label: 'Prorrateo' },
 ]
 
-/** Comma or line separated names -> participant rows (the row-by-row UI comes in the next PR). */
-function filasDesdeTexto(texto: string): FilaParticipante[] {
-  return texto
-    .split(/[,\n]/)
-    .map((nombre) => nombre.trim())
-    .filter((nombre) => nombre.length > 0)
-    .map((nombre, i) => ({ id: `${i}-${nombre}`, nombre, monto: null }))
-}
-
-function CampoMonto(props: { label: string; valor: number | null; onCambiar: (valor: number | null) => void }) {
-  return (
-    <CurrencyInput
-      value={props.valor}
-      onChangeValue={props.onCambiar}
-      prefix="$ "
-      delimiter="."
-      separator=","
-      precision={2}
-      minValue={0}
-      renderTextInput={(textInputProps) => (
-        // The lib types selectionColor as ColorValue; Paper's TextInput wants a string.
-        <TextInput {...(textInputProps as ComponentProps<typeof TextInput>)} label={props.label} mode="outlined" keyboardType="numeric" />
-      )}
-    />
-  )
-}
+const MODOS_REPARTO = [
+  { value: 'iguales', label: 'Partes iguales' },
+  { value: 'personalizado', label: 'Montos personalizados' },
+]
 
 export default function NuevoGastoScreen() {
   const { datos: tarjetas } = useServicio(tarjetasService.listar)
@@ -71,7 +54,7 @@ export default function NuevoGastoScreen() {
     modoReparto: 'iguales',
     montoUsuario: null,
   }))
-  const [textoParticipantes, setTextoParticipantes] = useState('')
+  const [mostrarFecha, setMostrarFecha] = useState(false)
   const [intentoGuardar, setIntentoGuardar] = useState(false)
   const [guardando, setGuardando] = useState(false)
   // A ref, not just state: two taps in the same frame both see guardando=false.
@@ -82,11 +65,21 @@ export default function NuevoGastoScreen() {
   }
 
   const tarjetasActivas = tarjetas ?? []
-  const { errores, plan } = evaluarFormulario(valores, tarjetasActivas)
+  const { errores, plan, partes } = evaluarFormulario(valores, tarjetasActivas)
   const erroresAMostrar = erroresVisibles(errores, valores, intentoGuardar)
   const hayDescuento = (valores.descuento ?? 0) > 0
-  // A discount only exists with more than 1 cuota; the form ignores it otherwise.
-  const permiteDescuento = Number.isInteger(Number(valores.cuotas)) && Number(valores.cuotas) > 1
+  const cuotasNumero = Number(valores.cuotas)
+  // Discount only exists with more than 1 cuota; custom amounts only with exactly 1 (shared).
+  const permiteDescuento = Number.isInteger(cuotasNumero) && cuotasNumero > 1
+  const permitePersonalizado = valores.tipo === 'compartido' && cuotasNumero === 1
+  const personalizado = esRepartoPersonalizado(valores)
+
+  function elegirFecha(evento: DateTimePickerEvent, fecha?: Date) {
+    setMostrarFecha(false)
+    if (evento.type === 'set' && fecha) {
+      cambiar('fechaCompra', aFechaISOLocal(fecha))
+    }
+  }
 
   async function guardar() {
     if (guardandoRef.current) return
@@ -123,25 +116,35 @@ export default function NuevoGastoScreen() {
           mode="outlined"
           style={styles.campo}
         />
-        <CampoMonto label="Monto total" valor={valores.monto} onCambiar={(v) => cambiar('monto', v)} />
-        <TextInput
-          label="Fecha de compra (AAAA-MM-DD)"
-          value={valores.fechaCompra}
-          onChangeText={(texto) => cambiar('fechaCompra', texto)}
-          mode="outlined"
-          style={styles.campo}
-        />
+        {personalizado ? (
+          <Text variant="titleMedium" style={styles.campo}>
+            Total: {formatearMonto(sumarMontos(montosPersonalizadosCents(valores)))}
+          </Text>
+        ) : (
+          <CampoMonto label="Monto total" valor={valores.monto} onCambiar={(v) => cambiar('monto', v)} />
+        )}
+
+        <Button icon="calendar" mode="outlined" onPress={() => setMostrarFecha(true)} style={styles.campo}>
+          {`Fecha de compra: ${formatearFecha(valores.fechaCompra)}`}
+        </Button>
+        {mostrarFecha && <DateTimePicker value={deFechaISOLocal(valores.fechaCompra)} mode="date" onChange={elegirFecha} />}
+
+        {permitePersonalizado && (
+          <SegmentedButtons
+            value={valores.modoReparto}
+            onValueChange={(v) => cambiar('modoReparto', v as ValoresGastoForm['modoReparto'])}
+            buttons={MODOS_REPARTO}
+            style={styles.campo}
+          />
+        )}
 
         {valores.tipo === 'compartido' && (
-          <TextInput
-            label="Participantes (separados por coma)"
-            value={textoParticipantes}
-            onChangeText={(texto) => {
-              setTextoParticipantes(texto)
-              cambiar('participantes', filasDesdeTexto(texto))
-            }}
-            mode="outlined"
-            style={styles.campo}
+          <ParticipantesForm
+            filas={valores.participantes}
+            personalizado={personalizado}
+            montoUsuario={valores.montoUsuario}
+            onCambiarFilas={(filas) => cambiar('participantes', filas)}
+            onCambiarMontoUsuario={(monto) => cambiar('montoUsuario', monto)}
           />
         )}
 
@@ -195,6 +198,14 @@ export default function NuevoGastoScreen() {
             {MENSAJES_ERROR_GASTO[error]}
           </HelperText>
         ))}
+
+        {partes && (
+          <List.Section title="Parte de cada persona">
+            {partes.map((parte) => (
+              <List.Item key={parte.nombre} title={parte.nombre} description={formatearMonto(parte.montoCents)} />
+            ))}
+          </List.Section>
+        )}
 
         {plan && (
           <List.Section title="Vista previa de cuotas">
