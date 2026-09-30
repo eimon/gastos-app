@@ -1,5 +1,6 @@
 // app/tarjetas/index.tsx - Listado de tarjetas activas
-import { View, StyleSheet, FlatList } from 'react-native'
+import { memo } from 'react'
+import { View, StyleSheet, FlatList, type ListRenderItemInfo } from 'react-native'
 import { ActivityIndicator, Appbar, FAB, List, Text } from 'react-native-paper'
 import { router } from 'expo-router'
 
@@ -21,6 +22,28 @@ function volver() {
   // navigating through that tree. This whole bypass is deleted in PR 4b,
   // where a normal `router.back()` will always have real history.
 }
+
+// Module-level row, renderItem and keyExtractor: stable references across
+// renders, so FlatList never re-creates them and rows only re-render when
+// their own `tarjeta` changes.
+const FilaTarjeta = memo(function FilaTarjeta({ tarjeta }: { tarjeta: Tarjeta }) {
+  return (
+    <List.Item
+      title={tarjeta.nombre}
+      description={`Cierra el ${tarjeta.diaCierre} · Vence el ${tarjeta.diaVencimiento}`}
+      left={IconoTarjeta}
+      onPress={() => router.push(`/tarjetas/${tarjeta.id}`)}
+    />
+  )
+})
+
+function IconoTarjeta(props: { color: string; style?: object }) {
+  return <List.Icon {...props} icon="credit-card-outline" />
+}
+
+const renderTarjeta = ({ item }: ListRenderItemInfo<Tarjeta>) => <FilaTarjeta tarjeta={item} />
+const claveTarjeta = (tarjeta: Tarjeta) => tarjeta.id
+const irANuevaTarjeta = () => router.push('/tarjetas/nueva')
 
 export default function TarjetasScreen() {
   const { datos: tarjetas, cargando, error } = useServicio(tarjetasService.listar)
@@ -55,21 +78,10 @@ export default function TarjetasScreen() {
           <Text>No hay tarjetas todavía. Creá la primera con el botón +.</Text>
         </View>
       ) : (
-        <FlatList
-          data={tarjetas}
-          keyExtractor={(tarjeta: Tarjeta) => tarjeta.id}
-          renderItem={({ item }) => (
-            <List.Item
-              title={item.nombre}
-              description={`Cierra el ${item.diaCierre} · Vence el ${item.diaVencimiento}`}
-              left={(props) => <List.Icon {...props} icon="credit-card-outline" />}
-              onPress={() => router.push(`/tarjetas/${item.id}`)}
-            />
-          )}
-        />
+        <FlatList data={tarjetas} keyExtractor={claveTarjeta} renderItem={renderTarjeta} />
       )}
 
-      <FAB icon="plus" label="Nueva tarjeta" style={styles.fab} onPress={() => router.push('/tarjetas/nueva')} />
+      <FAB icon="plus" label="Nueva tarjeta" style={styles.fab} onPress={irANuevaTarjeta} />
     </View>
   )
 }
