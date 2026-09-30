@@ -15,6 +15,8 @@ import {
   type TarjetaGasto,
   type TipoGasto,
 } from '../domain/gasto';
+import { MAX_CUOTAS } from '../domain/limites';
+import { esFechaISOValida } from '../domain/vencimientos';
 import { NOMBRE_USUARIO, sumarMontos } from '../domain/participantes';
 import type { InputCrearGasto } from './gastosService';
 import { aFechaISOLocal } from './fechaLocal';
@@ -48,14 +50,14 @@ export interface ValoresGastoForm {
   montoUsuario: number | null;
 }
 
-export type ErrorFormularioGasto = ErrorGasto | 'DESCRIPCION_REQUERIDA' | 'FECHA_INVALIDA';
+export type ErrorFormularioGasto = ErrorGasto;
 
 export const MENSAJES_ERROR_GASTO: Record<ErrorFormularioGasto, string> = {
   DESCRIPCION_REQUERIDA: 'La descripción es obligatoria.',
   FECHA_INVALIDA: 'La fecha de compra no es válida.',
   MONTO_INVALIDO: 'El monto debe ser mayor a cero.',
   DESCUENTO_INVALIDO: 'El descuento debe ser mayor o igual a cero y menor al monto total.',
-  CUOTAS_INVALIDA: 'La cantidad de cuotas debe ser un número entero de 1 o más.',
+  CUOTAS_INVALIDA: `La cantidad de cuotas debe ser un número entero entre 1 y ${MAX_CUOTAS}.`,
   TARJETA_REQUERIDA: 'Para pagar en más de una cuota hay que elegir una tarjeta.',
   TIPO_DESCUENTO_REQUERIDO: 'Hay que elegir cómo se aplica el descuento.',
   SIN_PARTICIPANTES: 'Un gasto compartido necesita al menos un participante.',
@@ -73,15 +75,7 @@ export function aCentavos(valor: number | null): number {
   return Math.round(valor * 100);
 }
 
-export function esFechaISOValida(fecha: string): boolean {
-  const coincidencia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);
-  if (!coincidencia) {
-    return false;
-  }
-  const [anio, mes, dia] = [Number(coincidencia[1]), Number(coincidencia[2]), Number(coincidencia[3])];
-  const real = new Date(Date.UTC(anio, mes - 1, dia));
-  return real.getUTCFullYear() === anio && real.getUTCMonth() === mes - 1 && real.getUTCDate() === dia;
-}
+export { esFechaISOValida };
 
 export function fechaHoyISO(ahora: Date = new Date()): string {
   return aFechaISOLocal(ahora);
@@ -134,6 +128,7 @@ export function evaluarFormulario(valores: ValoresGastoForm, tarjetasActivas: Ta
   const input = construirInputCrear(valores);
   const tarjeta = tarjetasActivas.find((t) => t.id === input.tarjetaId) ?? null;
   const inputDominio: InputGasto = {
+    descripcion: input.descripcion,
     tipo: input.tipo,
     fechaCompra: input.fechaCompra,
     montoTotalCents: input.montoTotalCents,
@@ -145,18 +140,8 @@ export function evaluarFormulario(valores: ValoresGastoForm, tarjetasActivas: Ta
     montosPersonalizadosCents: input.montosPersonalizadosCents,
   };
 
-  const errores: ErrorFormularioGasto[] = [];
-  if (input.descripcion === '') {
-    errores.push('DESCRIPCION_REQUERIDA');
-  }
-  const fechaValida = esFechaISOValida(input.fechaCompra);
-  if (!fechaValida) {
-    errores.push('FECHA_INVALIDA');
-  }
-  const erroresDominio = validarGasto(inputDominio);
-  errores.push(...erroresDominio);
-
-  const plan = fechaValida && erroresDominio.length === 0 ? planificarGasto(inputDominio) : null;
+  const errores = validarGasto(inputDominio);
+  const plan = errores.length === 0 ? planificarGasto(inputDominio) : null;
   const partes =
     plan && input.montosPersonalizadosCents
       ? [...input.participantes, NOMBRE_USUARIO].map((nombre, i) => ({

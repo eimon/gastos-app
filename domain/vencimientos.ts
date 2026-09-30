@@ -120,3 +120,14 @@ export function calcularVencimientosMensuales(primerPago: FechaISO, cuotas: numb
 
   return fechas;
 }
+
+/** True for a real calendar date written as `AAAA-MM-DD` (rejects 2026-02-30). */
+export function esFechaISOValida(fecha: string): boolean {
+  const coincidencia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);
+  if (!coincidencia) {
+    return false;
+  }
+  const [anio, mes, dia] = [Number(coincidencia[1]), Number(coincidencia[2]), Number(coincidencia[3])];
+  const real = new Date(Date.UTC(anio, mes - 1, dia));
+  return real.getUTCFullYear() === anio && real.getUTCMonth() === mes - 1 && real.getUTCDate() === dia;
+}

@@ -7,3 +7,10 @@ describe('dividirEnPartes', () => {
     expect(dividirEnPartes(total, 3)).toEqual([33_333_33, 33_333_33, 33_333_34]);
   });
 });
+
+describe('dividirEnPartes safety cap', () => {
+  test('refuses an absurd number of parts instead of allocating it', () => {
+    expect(() => dividirEnPartes(100, 10_000_000_000)).toThrow();
+    expect(dividirEnPartes(1000, 360)).toHaveLength(360);
+  });
+});

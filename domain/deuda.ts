@@ -1,4 +1,5 @@
 import { Centavos, dividirEnPartes } from './dinero';
+import { esCantidadCuotasValida } from './limites';
 import { calcularVencimientosMensuales, parsearFechaISO, FechaISO } from './vencimientos';
 
 export interface InputDeuda {
@@ -33,7 +34,7 @@ export function validarDeuda(input: InputDeuda): ErrorDeuda[] {
     errores.push('MONTO_INVALIDO');
   }
 
-  if (!Number.isInteger(input.cuotas) || input.cuotas < 1) {
+  if (!esCantidadCuotasValida(input.cuotas)) {
     errores.push('CUOTAS_INVALIDA');
   }
 

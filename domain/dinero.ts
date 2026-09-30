@@ -1,3 +1,5 @@
+import { MAX_CUOTAS } from './limites';
+
 /**
  * Money is represented as integer cents everywhere in the domain layer.
  * Never use floats or decimal strings here — integer cents keep every
@@ -19,6 +21,11 @@ export function dividirEnPartes(total: Centavos, n: number): Centavos[] {
   }
   if (!Number.isInteger(n) || n <= 0) {
     throw new Error('La cantidad de partes debe ser un entero positivo.');
+  }
+
+  // Defensive cap: callers validate first, this only stops a runaway allocation.
+  if (n > MAX_CUOTAS) {
+    throw new Error(`La cantidad de partes no puede superar ${MAX_CUOTAS}.`);
   }
 
   const base = Math.floor(total / n);

@@ -1,7 +1,8 @@
 import { Centavos } from './dinero';
 import { calcularMontosCuotas, TipoDescuento } from './cuotas';
 import { sumarMontos, validarMontosPersonalizados, validarNombresParticipantes } from './participantes';
-import { calcularVencimientosTarjeta, FechaISO } from './vencimientos';
+import { esCantidadCuotasValida } from './limites';
+import { calcularVencimientosTarjeta, esFechaISOValida, FechaISO } from './vencimientos';
 
 export type TipoGasto = 'personal' | 'compartido';
 
@@ -12,6 +13,8 @@ export interface TarjetaGasto {
 }
 
 export interface InputGasto {
+  /** When provided it must not be blank; `gastosService.crear` and the form always provide it. */
+  descripcion?: string;
   tipo: TipoGasto;
   fechaCompra: FechaISO;
   montoTotalCents: Centavos;
@@ -28,6 +31,8 @@ export interface InputGasto {
 }
 
 export type ErrorGasto =
+  | 'DESCRIPCION_REQUERIDA'
+  | 'FECHA_INVALIDA'
   | 'MONTO_INVALIDO'
   | 'DESCUENTO_INVALIDO'
   | 'CUOTAS_INVALIDA'
@@ -51,22 +56,31 @@ export type ErrorGasto =
 export function validarGasto(input: InputGasto): ErrorGasto[] {
   const errores: ErrorGasto[] = [];
 
+  if (input.descripcion !== undefined && input.descripcion.trim() === '') {
+    errores.push('DESCRIPCION_REQUERIDA');
+  }
+
+  if (!esFechaISOValida(input.fechaCompra)) {
+    errores.push('FECHA_INVALIDA');
+  }
+
   if (!Number.isInteger(input.montoTotalCents) || input.montoTotalCents <= 0) {
     errores.push('MONTO_INVALIDO');
   }
 
   // A discount >= the total would leave a net amount of 0 (or negative),
   // which is never a valid gasto — independent of a prorrateo cuota
-  // individually resolving to 0, which stays valid.
+  // individually resolving to 0, which stays valid. The comparison only
+  // applies to an actual discount, so an empty form reports just MONTO_INVALIDO.
   if (
     !Number.isInteger(input.descuentoCents) ||
     input.descuentoCents < 0 ||
-    input.descuentoCents >= input.montoTotalCents
+    (input.descuentoCents > 0 && input.descuentoCents >= input.montoTotalCents)
   ) {
     errores.push('DESCUENTO_INVALIDO');
   }
 
-  if (!Number.isInteger(input.cuotas) || input.cuotas < 1) {
+  if (!esCantidadCuotasValida(input.cuotas)) {
     errores.push('CUOTAS_INVALIDA');
   }
 

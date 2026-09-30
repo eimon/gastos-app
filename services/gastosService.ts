@@ -72,7 +72,10 @@ function resolverTarjetaParaCrear(exec: Executor, tarjetaId: string | null): Inp
  * shares in one transaction.
  */
 export async function crear(input: InputCrearGasto): Promise<gastosRepo.GastoConDetalle> {
+  // planificarGasto validates description, date, amounts and cuotas through the
+  // domain gate before computing anything, so the form is never trusted.
   const plan = planificarGasto({
+    descripcion: input.descripcion,
     tipo: input.tipo,
     fechaCompra: input.fechaCompra,
     montoTotalCents: input.montoTotalCents,
@@ -93,7 +96,7 @@ export async function crear(input: InputCrearGasto): Promise<gastosRepo.GastoCon
 
   const resultado = db.transaction((tx) =>
     gastosRepo.crear(tx, {
-      descripcion: input.descripcion,
+      descripcion: input.descripcion.trim(),
       fechaCompra: input.fechaCompra,
       tipo: input.tipo,
       montoTotalCents: input.montoTotalCents,

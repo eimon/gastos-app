@@ -2,6 +2,7 @@ import {
   aCentavos,
   construirInputCrear,
   erroresVisibles,
+  MENSAJES_ERROR_GASTO,
   esFechaISOValida,
   evaluarFormulario,
   esRepartoPersonalizado,
@@ -147,6 +148,30 @@ describe('evaluarFormulario', () => {
     );
     expect(errores).toEqual(['DESCRIPCION_REQUERIDA', 'FECHA_INVALIDA', 'CUOTAS_INVALIDA']);
     expect(plan).toBeNull();
+  });
+
+  test('an absurd cuota count is rejected without planning (no freeze, no RangeError)', () => {
+    for (const cuotas of ['361', '300000', '10000000000']) {
+      const { errores, plan } = evaluarFormulario({ ...base, cuotas, tarjetaId: 't1' }, [tarjeta]);
+      expect(errores).toEqual(['CUOTAS_INVALIDA']);
+      expect(plan).toBeNull();
+    }
+    expect(evaluarFormulario({ ...base, cuotas: '360', tarjetaId: 't1' }, [tarjeta]).errores).toEqual([]);
+    expect(MENSAJES_ERROR_GASTO.CUOTAS_INVALIDA).toContain('360');
+  });
+
+  test('an untouched form reports only the missing amount and description, never a discount error', () => {
+    const vacio: ValoresGastoForm = { ...base, descripcion: '', monto: null };
+    expect(evaluarFormulario(vacio, []).errores).toEqual(['DESCRIPCION_REQUERIDA', 'MONTO_INVALIDO']);
+  });
+
+  test('a custom form with every amount empty reports no discount error', () => {
+    const errores = evaluarFormulario(
+      { ...base, tipo: 'compartido', modoReparto: 'personalizado', monto: null, participantes: [fila('Ana')] },
+      [],
+    ).errores;
+    expect(errores).not.toContain('DESCUENTO_INVALIDO');
+    expect(errores).toEqual(['MONTO_INVALIDO', 'MONTOS_PERSONALIZADOS_INVALIDOS']);
   });
 
   test('an id that is not an active card counts as no card', () => {

@@ -1,3 +1,4 @@
+import { MAX_CUOTAS } from '../limites';
 import { validarGasto, planificarGasto, InputGasto } from '../gasto';
 
 const inputBase: InputGasto = {
@@ -75,6 +76,24 @@ describe('validarGasto', () => {
       ).toContain('MONTOS_PERSONALIZADOS_INVALIDOS');
     });
 
+    test('rejects custom amounts on a personal gasto, even when they add up', () => {
+      const personal: InputGasto = { ...inputBase, montoTotalCents: 10_00, participantes: [], montosPersonalizadosCents: [10_00] };
+      expect(validarGasto(personal)).toContain('MONTOS_PERSONALIZADOS_INVALIDOS');
+      expect(() => planificarGasto(personal)).toThrow('Gasto invalido');
+    });
+
+    test('rejects custom amounts with cuotas > 1 at domain level', () => {
+      const tarjeta = { id: 'v', diaCierre: 25, diaVencimiento: 10 };
+      const errores = validarGasto({ ...compartido, cuotas: 2, tarjeta });
+      expect(errores).toEqual(['MONTOS_PERSONALIZADOS_INVALIDOS']);
+      expect(() => planificarGasto({ ...compartido, cuotas: 2, tarjeta })).toThrow('Gasto invalido');
+    });
+
+    test('a custom gasto where every amount is 0 reports amounts and total, never a discount error', () => {
+      const errores = validarGasto({ ...compartido, montoTotalCents: 0, montosPersonalizadosCents: [0, 0, 0] });
+      expect(errores).toEqual(['MONTO_INVALIDO', 'MONTOS_PERSONALIZADOS_INVALIDOS']);
+    });
+
     test.each([
       ['a sum different from the total', { montoTotalCents: 70_00 }],
       ['a wrong number of amounts', { montosPersonalizadosCents: [30_00, 30_00] }],
@@ -85,6 +104,30 @@ describe('validarGasto', () => {
     ])('rejects %s', (_nombre, cambios) => {
       expect(validarGasto({ ...compartido, ...cambios })).toContain('MONTOS_PERSONALIZADOS_INVALIDOS');
     });
+  });
+
+  test('rejects more cuotas than the maximum, accepts exactly the maximum', () => {
+    const tarjeta = { id: 'v', diaCierre: 25, diaVencimiento: 10 };
+    expect(validarGasto({ ...inputBase, cuotas: MAX_CUOTAS + 1, tarjeta })).toContain('CUOTAS_INVALIDA');
+    expect(validarGasto({ ...inputBase, cuotas: 10_000_000_000, tarjeta })).toContain('CUOTAS_INVALIDA');
+    expect(validarGasto({ ...inputBase, cuotas: MAX_CUOTAS, tarjeta })).toEqual([]);
+    expect(() => planificarGasto({ ...inputBase, cuotas: 10_000_000_000, tarjeta })).toThrow('Gasto invalido');
+  });
+
+  test('an untouched form (no amount, no discount) reports only MONTO_INVALIDO', () => {
+    expect(validarGasto({ ...inputBase, montoTotalCents: 0 })).toEqual(['MONTO_INVALIDO']);
+  });
+
+  test('a discount with no amount still reports the discount problem', () => {
+    const errores = validarGasto({ ...inputBase, cuotas: 3, tarjeta: { id: 'v', diaCierre: 1, diaVencimiento: 2 }, montoTotalCents: 0, descuentoCents: 5_00, tipoDescuento: 'uniforme' });
+    expect(errores).toEqual(['MONTO_INVALIDO', 'DESCUENTO_INVALIDO']);
+  });
+
+  test('rejects a blank description and an impossible date', () => {
+    expect(validarGasto({ ...inputBase, descripcion: '   ' })).toEqual(['DESCRIPCION_REQUERIDA']);
+    expect(validarGasto({ ...inputBase, descripcion: 'Heladera' })).toEqual([]);
+    expect(validarGasto({ ...inputBase, fechaCompra: '2026-02-30' })).toEqual(['FECHA_INVALIDA']);
+    expect(validarGasto({ ...inputBase, fechaCompra: '' })).toEqual(['FECHA_INVALIDA']);
   });
 
   test('rejects a personal gasto with cuotas > 1 and no card', () => {

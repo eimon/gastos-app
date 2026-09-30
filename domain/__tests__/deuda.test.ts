@@ -1,3 +1,4 @@
+import { MAX_CUOTAS } from '../limites';
 import { planificarDeuda, validarDeuda, InputDeuda } from '../deuda';
 
 const inputBase: InputDeuda = {
@@ -25,6 +26,14 @@ describe('planificarDeuda', () => {
 });
 
 describe('validarDeuda', () => {
+  test('accepts a 30-year loan (360 cuotas) but rejects anything above the maximum', () => {
+    expect(validarDeuda({ ...inputBase, cuotas: MAX_CUOTAS })).toEqual([]);
+    expect(validarDeuda({ ...inputBase, cuotas: MAX_CUOTAS + 1 })).toContain('CUOTAS_INVALIDA');
+    expect(validarDeuda({ ...inputBase, cuotas: 10_000_000_000 })).toContain('CUOTAS_INVALIDA');
+    expect(() => planificarDeuda({ ...inputBase, cuotas: 10_000_000_000 })).toThrow('Deuda invalida');
+    expect(planificarDeuda({ ...inputBase, cuotas: MAX_CUOTAS }).cuotas).toHaveLength(MAX_CUOTAS);
+  });
+
   test('rejects a non-positive montoTotalCents', () => {
     expect(validarDeuda({ ...inputBase, montoTotalCents: 0 })).toContain('MONTO_INVALIDO');
   });
