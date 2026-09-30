@@ -21,10 +21,20 @@ export function hayNodeSqlite(): boolean {
   }
 }
 
-/** `describe` when node:sqlite exists; otherwise the suite is skipped with a clear message. */
+/**
+ * `describe` when node:sqlite exists. Otherwise the suite is skipped with a clear message, except in CI
+ * (`process.env.CI` set), where it FAILS so the missing coverage can never go unnoticed.
+ */
 export const describeConSqlite: typeof describe = ((nombre: string, fn: () => void) => {
   if (hayNodeSqlite()) {
     return describe(nombre, fn);
+  }
+  if (process.env.CI) {
+    return describe(nombre, () => {
+      test('node:sqlite is required in CI', () => {
+        throw new Error(`"${nombre}" needs node:sqlite (Node 22.5 or newer) and cannot be skipped in CI.`);
+      });
+    });
   }
   console.warn(`Skipping "${nombre}": node:sqlite is unavailable (needs Node 22.5 or newer).`);
   return describe.skip(nombre, fn);

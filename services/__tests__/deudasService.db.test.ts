@@ -95,6 +95,33 @@ describeConSqlite('deudasService against real SQLite (foreign keys ON)', () => {
     expect(await deudasService.obtenerDetalle(deuda.id)).toBeUndefined();
   });
 
+  test('a blocked edit leaves BOTH the live and the anulado pago untouched', async () => {
+    const { deuda, cuotas } = await deudasService.crear(base);
+    const vivo = await pagar(cuotas[0].id, 1_000);
+    const anulado = await pagar(cuotas[0].id, 2_000);
+    await pagosService.anular(anulado.id);
+
+    expect(await codigos(deudasService.editar(deuda.id, { acreedor: 'B', descripcion: 'd', nucleo: nucleo({ cuotas: 2 }) }))).toEqual([
+      'BLOQUEADO_POR_PAGO',
+    ]);
+
+    const filas = db.select().from(pagos).all();
+    expect(filas).toHaveLength(2);
+    expect(filas.find((p) => p.id === vivo.id)?.deletedAt).toBeNull();
+    expect(filas.find((p) => p.id === anulado.id)?.deletedAt).not.toBeNull();
+    expect(deudasRepo.obtenerConCuotas(db, deuda.id)?.cuotas).toHaveLength(3);
+  });
+
+  test('the month list sorts by due date, then by acreedor in Spanish order (accents and case ignored)', async () => {
+    for (const acreedor of ['beta', 'Zeta', 'Ángel', 'álvaro']) {
+      await deudasService.crear({ ...base, acreedor, cuotas: 1, fechaPrimerPago: '2026-06-10' });
+    }
+    await deudasService.crear({ ...base, acreedor: 'Antes', cuotas: 1, fechaPrimerPago: '2026-06-20' });
+    await deudasService.crear({ ...base, acreedor: 'Zzz', cuotas: 1, fechaPrimerPago: '2026-06-05' });
+
+    expect((await deudasService.listarDelMes(6, 2026)).map((f) => f.acreedor)).toEqual(['Zzz', 'álvaro', 'Ángel', 'beta', 'Zeta', 'Antes']);
+  });
+
   test('a deleted deuda rejects pagos inside the transaction and is not found for edit or delete', async () => {
     const { deuda, cuotas } = await deudasService.crear(base);
     await deudasService.eliminar(deuda.id);
