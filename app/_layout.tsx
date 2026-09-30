@@ -1,7 +1,4 @@
 // app/_layout.tsx - Layout principal
-// Importar polyfills antes que cualquier otra cosa
-import '../lib/polyfills'
-
 import { useState } from 'react'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'

@@ -39,20 +39,3 @@ export const showConfirm = (
     { cancelable: false }
   )
 }
-
-export const showOptions = (
-  title: string,
-  message: string,
-  options: Array<{
-    text: string
-    onPress: () => void
-    style?: 'default' | 'cancel' | 'destructive'
-  }>
-) => {
-  Alert.alert(
-    title,
-    message,
-    options,
-    { cancelable: true }
-  )
-}

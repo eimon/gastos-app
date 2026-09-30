@@ -14,12 +14,6 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          href: null, // Ocultar esta tab del navegador
-        }}
-      />
-      <Tabs.Screen
-        name="gastos"
-        options={{
           title: 'Gastos',
           tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={24} color={color} />,
         }}
