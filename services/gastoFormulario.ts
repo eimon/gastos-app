@@ -68,6 +68,20 @@ export const MENSAJES_ERROR_GASTO: Record<ErrorFormularioGasto, string> = {
   PARTICIPANTE_DUPLICADO: 'No puede haber participantes con el mismo nombre (ni llamarse "Yo").',
 };
 
+export const valoresInicialesGasto = (): ValoresGastoForm => ({
+  descripcion: '',
+  fechaCompra: fechaHoyISO(),
+  monto: null,
+  descuento: null,
+  tipo: 'personal',
+  tipoDescuento: 'uniforme',
+  cuotas: '1',
+  tarjetaId: null,
+  participantes: [],
+  modoReparto: 'iguales',
+  montoUsuario: null,
+});
+
 export function aCentavos(valor: number | null): number {
   if (valor === null || !Number.isFinite(valor)) {
     return 0;

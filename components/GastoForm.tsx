@@ -1,29 +1,26 @@
-// app/mis-gastos/nuevo.tsx - Alta de un gasto (personal o compartido) con vista previa de cuotas
+// components/GastoForm.tsx - Formulario compartido de alta y edición de un gasto, con vista previa de cuotas
 import { useRef, useState } from 'react'
 import { View, StyleSheet, ScrollView } from 'react-native'
 import { Appbar, Button, Chip, HelperText, List, SegmentedButtons, Text, TextInput } from 'react-native-paper'
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 
-import { CampoMonto } from '../../components/CampoMonto'
-import { ParticipantesForm } from '../../components/ParticipantesForm'
-import { useServicio } from '../../hooks/useServicio'
-import * as gastosService from '../../services/gastosService'
-import * as tarjetasService from '../../services/tarjetasService'
+import { CampoMonto } from './CampoMonto'
+import { ParticipantesForm } from './ParticipantesForm'
+import { useServicio } from '../hooks/useServicio'
+import * as tarjetasService from '../services/tarjetasService'
 import {
   MENSAJES_ERROR_GASTO,
-  construirInputCrear,
   erroresVisibles,
   esRepartoPersonalizado,
   evaluarFormulario,
-  fechaHoyISO,
   montosPersonalizadosCents,
   type ValoresGastoForm,
-} from '../../services/gastoFormulario'
-import { formatearFecha, formatearMonto } from '../../services/gastoVista'
-import { aFechaISOLocal, deFechaISOLocal } from '../../services/fechaLocal'
-import { sumarMontos } from '../../domain/participantes'
-import { showAlert } from '../../lib/alerts'
+} from '../services/gastoFormulario'
+import { formatearFecha, formatearMonto } from '../services/gastoVista'
+import { aFechaISOLocal, deFechaISOLocal } from '../services/fechaLocal'
+import { sumarMontos } from '../domain/participantes'
+import { showAlert } from '../lib/alerts'
 
 const TIPOS = [
   { value: 'personal', label: 'Personal' },
@@ -39,21 +36,17 @@ const MODOS_REPARTO = [
   { value: 'personalizado', label: 'Montos personalizados' },
 ]
 
-export default function NuevoGastoScreen() {
+interface Props {
+  titulo: string
+  textoGuardar: string
+  valoresIniciales: ValoresGastoForm
+  /** Persists the form; a rejection is shown to the user as an alert. */
+  onGuardar: (valores: ValoresGastoForm) => Promise<void>
+}
+
+export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar }: Props) {
   const { datos: tarjetas } = useServicio(tarjetasService.listar)
-  const [valores, setValores] = useState<ValoresGastoForm>(() => ({
-    descripcion: '',
-    fechaCompra: fechaHoyISO(),
-    monto: null,
-    descuento: null,
-    tipo: 'personal',
-    tipoDescuento: 'uniforme',
-    cuotas: '1',
-    tarjetaId: null,
-    participantes: [],
-    modoReparto: 'iguales',
-    montoUsuario: null,
-  }))
+  const [valores, setValores] = useState<ValoresGastoForm>(valoresIniciales)
   const [intentoGuardar, setIntentoGuardar] = useState(false)
   const [guardando, setGuardando] = useState(false)
   // A ref, not just state: two taps in the same frame both see guardando=false.
@@ -93,7 +86,7 @@ export default function NuevoGastoScreen() {
     guardandoRef.current = true
     setGuardando(true)
     try {
-      await gastosService.crear(construirInputCrear(valores))
+      await onGuardar(valores)
       router.back()
     } catch (err) {
       showAlert('Error', err instanceof Error ? err.message : 'No se pudo guardar el gasto')
@@ -107,7 +100,7 @@ export default function NuevoGastoScreen() {
     <View style={styles.container}>
       <Appbar.Header>
         <Appbar.BackAction onPress={router.back} />
-        <Appbar.Content title="Nuevo gasto" />
+        <Appbar.Content title={titulo} />
       </Appbar.Header>
 
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
@@ -223,7 +216,7 @@ export default function NuevoGastoScreen() {
         )}
 
         <Button mode="contained" onPress={guardar} loading={guardando} disabled={guardando} style={styles.boton}>
-          Guardar gasto
+          {textoGuardar}
         </Button>
       </ScrollView>
     </View>
