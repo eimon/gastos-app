@@ -12,11 +12,16 @@ import type { InputCrearGasto } from './gastosService';
 import type { FilaParticipante, ModoReparto, ValoresGastoForm } from './gastoFormulario';
 import { construirCuotasRepo, construirParticipantes } from './gastoPlanMapper';
 
-export type CodigoErrorGasto = 'BLOQUEADO_POR_PAGO' | 'GASTO_NO_ENCONTRADO' | 'ELIMINAR_CON_PAGOS';
+export type CodigoErrorGasto =
+  | 'BLOQUEADO_POR_PAGO'
+  | 'GASTO_NO_ENCONTRADO'
+  | 'ELIMINAR_CON_PAGOS'
+  | 'DESCRIPCION_REQUERIDA';
 
 export const MENSAJES_ERROR_GASTO_GUARDADO: Record<CodigoErrorGasto, string> = {
   BLOQUEADO_POR_PAGO: 'Con pagos registrados solo se puede editar la descripción. Primero hay que anular los pagos.',
   GASTO_NO_ENCONTRADO: 'No se encontró el gasto.',
+  DESCRIPCION_REQUERIDA: 'La descripción es obligatoria.',
   ELIMINAR_CON_PAGOS: 'No se puede eliminar un gasto con pagos registrados. Primero hay que anular los pagos.',
 };
 
@@ -24,6 +29,15 @@ export class GastoRechazadoError extends Error {
   constructor(public readonly codigo: CodigoErrorGasto) {
     super(MENSAJES_ERROR_GASTO_GUARDADO[codigo]);
   }
+}
+
+/** Every edit needs a non-blank description, whichever branch ends up writing it. Returns it trimmed. */
+export function exigirDescripcion(descripcion: string): string {
+  const limpia = descripcion.trim();
+  if (limpia === '') {
+    throw new GastoRechazadoError('DESCRIPCION_REQUERIDA');
+  }
+  return limpia;
 }
 
 /** Gate shared by the core-field edit and the delete: any live pago blocks both. */

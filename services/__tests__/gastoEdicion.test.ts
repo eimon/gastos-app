@@ -3,6 +3,7 @@ import {
   GastoRechazadoError,
   construirEdicion,
   conservarVencimientos,
+  exigirDescripcion,
   exigirSinPagos,
   nucleoSinCambios,
   valoresDesdeDetalle,
@@ -270,5 +271,24 @@ describe('nucleoSinCambios', () => {
 
   test('is false when stored custom shares no longer match an equal-split form', () => {
     expect(nucleoSinCambios(compartidoGuardado([45_00, 15_00]), igual())).toBe(false);
+  });
+});
+
+describe('exigirDescripcion', () => {
+  test('returns the trimmed description', () => {
+    expect(exigirDescripcion('  Cena  ')).toBe('Cena');
+  });
+
+  test.each(['', '   ', '\t\n'])('rejects a blank description (%j) with a Spanish message', (blanca) => {
+    expect(() => exigirDescripcion(blanca)).toThrow('La descripción es obligatoria.');
+  });
+
+  test('uses a coded error so screens can recognize it', () => {
+    try {
+      exigirDescripcion(' ');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as GastoRechazadoError).codigo).toBe('DESCRIPCION_REQUERIDA');
+    }
   });
 });

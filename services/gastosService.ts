@@ -12,12 +12,13 @@ import { construirCuotasRepo, construirParticipantes } from './gastoPlanMapper';
 import {
   GastoRechazadoError,
   construirEdicion,
+  exigirDescripcion,
   exigirSinPagos,
   nucleoSinCambios,
   valoresDesdeDetalle,
   type NucleoGasto,
 } from './gastoEdicion';
-import { MENSAJES_ERROR_GASTO, type ValoresGastoForm } from './gastoFormulario';
+import type { ValoresGastoForm } from './gastoFormulario';
 
 export interface InputCrearGasto {
   tipo: TipoGasto;
@@ -168,12 +169,11 @@ export interface InputEditarGasto {
  * can never orphan a pago.
  */
 export async function editar(id: string, input: InputEditarGasto): Promise<void> {
+  // Validated once, before any branch writes, so no path can store a blank description.
+  const descripcion = exigirDescripcion(input.descripcion);
   const { nucleo } = input;
   if (!nucleo) {
-    if (input.descripcion.trim() === '') {
-      throw new Error(MENSAJES_ERROR_GASTO.DESCRIPCION_REQUERIDA);
-    }
-    if (!gastosRepo.actualizarDescripcion(db, id, input.descripcion.trim())) {
+    if (!gastosRepo.actualizarDescripcion(db, id, descripcion)) {
       throw new GastoRechazadoError('GASTO_NO_ENCONTRADO');
     }
     emitirCambio();
@@ -192,7 +192,7 @@ export async function editar(id: string, input: InputEditarGasto): Promise<void>
     // Nothing structural changed: write the description only, so no cuota is
     // rebuilt (and no cancelled pago is purged) by a no-op save.
     if (nucleoSinCambios(actual, nucleo)) {
-      gastosRepo.actualizarDescripcion(tx, id, input.descripcion.trim());
+      gastosRepo.actualizarDescripcion(tx, id, descripcion);
       return;
     }
 
@@ -204,7 +204,7 @@ export async function editar(id: string, input: InputEditarGasto): Promise<void>
         ? resolverTarjeta(tx, nucleo.tarjetaId)
         : resolverTarjetaParaCrear(tx, nucleo.tarjetaId);
 
-    return gastosRepo.actualizarCompleto(tx, id, construirEdicion(actual, input.descripcion, nucleo, tarjeta));
+    return gastosRepo.actualizarCompleto(tx, id, construirEdicion(actual, descripcion, nucleo, tarjeta));
   });
 
   emitirCambio();
