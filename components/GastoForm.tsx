@@ -1,5 +1,6 @@
 // components/GastoForm.tsx - Formulario compartido de alta y edición de un gasto, con vista previa de cuotas
 import { useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { View, StyleSheet, ScrollView } from 'react-native'
 import { Appbar, Button, Chip, HelperText, List, SegmentedButtons, Text, TextInput } from 'react-native-paper'
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
@@ -20,6 +21,9 @@ import {
 import { formatearFecha, formatearMonto } from '../services/gastoVista'
 import { aFechaISOLocal, deFechaISOLocal } from '../services/fechaLocal'
 import { sumarMontos } from '../domain/participantes'
+import type { GastoConDetalle } from '../data/repositories/gastosRepo'
+import type { Tarjeta } from '../data/repositories/tarjetasRepo'
+import { conservarVencimientos, MENSAJES_ERROR_GASTO_GUARDADO } from '../services/gastoEdicion'
 import { showAlert } from '../lib/alerts'
 
 const TIPOS = [
@@ -42,9 +46,28 @@ interface Props {
   valoresIniciales: ValoresGastoForm
   /** Persists the form; a rejection is shown to the user as an alert. */
   onGuardar: (valores: ValoresGastoForm) => Promise<void>
+  /** Edit with payments: only the description can change, the rest is shown disabled. */
+  soloDescripcion?: boolean
+  /** Stored gasto when editing: its due dates are kept unless the date, cuotas or card change. */
+  original?: GastoConDetalle
+  /** The card already linked to the gasto, offered even when archived. */
+  tarjetaVinculada?: Tarjeta
 }
 
-export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar }: Props) {
+/** Dims and blocks touches for everything the edit rules lock. */
+function Bloqueable({ bloqueado, children }: { bloqueado: boolean; children: ReactNode }) {
+  return (
+    <View
+      pointerEvents={bloqueado ? 'none' : 'auto'}
+      importantForAccessibility={bloqueado ? 'no-hide-descendants' : 'auto'}
+      style={bloqueado ? styles.bloqueado : undefined}
+    >
+      {children}
+    </View>
+  )
+}
+
+export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar, soloDescripcion = false, original, tarjetaVinculada }: Props) {
   const { datos: tarjetas } = useServicio(tarjetasService.listar)
   const [valores, setValores] = useState<ValoresGastoForm>(valoresIniciales)
   const [intentoGuardar, setIntentoGuardar] = useState(false)
@@ -57,7 +80,24 @@ export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
   }
 
   const tarjetasActivas = tarjetas ?? []
-  const { errores, plan, partes } = evaluarFormulario(valores, tarjetasActivas)
+  // A card already linked to this gasto stays selectable even when archived.
+  const tarjetasDisponibles =
+    tarjetaVinculada && !tarjetasActivas.some((t) => t.id === tarjetaVinculada.id)
+      ? [...tarjetasActivas, tarjetaVinculada]
+      : tarjetasActivas
+  const evaluacion = evaluarFormulario(valores, tarjetasDisponibles)
+  const { partes } = evaluacion
+  // Locked edits only validate the description; the other fields are never saved.
+  const errores = soloDescripcion ? evaluacion.errores.filter((e) => e === 'DESCRIPCION_REQUERIDA') : evaluacion.errores
+  const plan = soloDescripcion
+    ? null
+    : original && evaluacion.plan
+      ? conservarVencimientos(evaluacion.plan, original, {
+          fechaCompra: valores.fechaCompra,
+          cuotas: Number(valores.cuotas),
+          tarjetaId: valores.tarjetaId,
+        })
+      : evaluacion.plan
   const erroresAMostrar = erroresVisibles(errores, valores, intentoGuardar)
   const hayDescuento = (valores.descuento ?? 0) > 0
   const cuotasNumero = Number(valores.cuotas)
@@ -104,7 +144,14 @@ export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
       </Appbar.Header>
 
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-        <SegmentedButtons value={valores.tipo} onValueChange={(v) => cambiar('tipo', v as ValoresGastoForm['tipo'])} buttons={TIPOS} />
+        {soloDescripcion && (
+          <HelperText type="info" visible>
+            {MENSAJES_ERROR_GASTO_GUARDADO.BLOQUEADO_POR_PAGO}
+          </HelperText>
+        )}
+        <Bloqueable bloqueado={soloDescripcion}>
+          <SegmentedButtons value={valores.tipo} onValueChange={(v) => cambiar('tipo', v as ValoresGastoForm['tipo'])} buttons={TIPOS} />
+        </Bloqueable>
 
         <TextInput
           label="Descripción"
@@ -113,81 +160,84 @@ export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
           mode="outlined"
           style={styles.campo}
         />
-        {personalizado ? (
-          <Text variant="titleMedium" style={styles.campo}>
-            Total: {formatearMonto(sumarMontos(montosPersonalizadosCents(valores)))}
-          </Text>
-        ) : (
-          <CampoMonto label="Monto total" valor={valores.monto} onCambiar={(v) => cambiar('monto', v)} />
-        )}
+        <Bloqueable bloqueado={soloDescripcion}>
+          {personalizado ? (
+            <Text variant="titleMedium" style={styles.campo}>
+              Total: {formatearMonto(sumarMontos(montosPersonalizadosCents(valores)))}
+            </Text>
+          ) : (
+            <CampoMonto label="Monto total" valor={valores.monto} onCambiar={(v) => cambiar('monto', v)} />
+          )}
 
-        <Button icon="calendar" mode="outlined" onPress={abrirSelectorFecha} style={styles.campo}>
-          {`Fecha de compra: ${formatearFecha(valores.fechaCompra)}`}
-        </Button>
-
-        {permitePersonalizado && (
-          <SegmentedButtons
-            value={valores.modoReparto}
-            onValueChange={(v) => cambiar('modoReparto', v as ValoresGastoForm['modoReparto'])}
-            buttons={MODOS_REPARTO}
-            style={styles.campo}
-          />
-        )}
-
-        {valores.tipo === 'compartido' && (
-          <ParticipantesForm
-            filas={valores.participantes}
-            personalizado={personalizado}
-            montoUsuario={valores.montoUsuario}
-            onCambiarFilas={(filas) => cambiar('participantes', filas)}
-            onCambiarMontoUsuario={(monto) => cambiar('montoUsuario', monto)}
-          />
-        )}
-
-        {permiteDescuento && (
-          <CampoMonto label="Descuento (opcional)" valor={valores.descuento} onCambiar={(v) => cambiar('descuento', v)} />
-        )}
-        {permiteDescuento && hayDescuento && (
-          <SegmentedButtons
-            value={valores.tipoDescuento}
-            onValueChange={(v) => cambiar('tipoDescuento', v as ValoresGastoForm['tipoDescuento'])}
-            buttons={TIPOS_DESCUENTO}
-            style={styles.campo}
-          />
-        )}
-
-        <TextInput
-          label="Cuotas"
-          value={valores.cuotas}
-          onChangeText={(texto) => cambiar('cuotas', texto)}
-          mode="outlined"
-          keyboardType="number-pad"
-          style={styles.campo}
-        />
-
-        <Text variant="labelLarge" style={styles.campo}>
-          Tarjeta
-        </Text>
-        <View style={styles.tarjetas}>
-          <Chip selected={valores.tarjetaId === null} onPress={() => cambiar('tarjetaId', null)}>
-            Sin tarjeta
-          </Chip>
-          {tarjetasActivas.map((tarjeta) => (
-            <Chip
-              key={tarjeta.id}
-              icon="credit-card-outline"
-              selected={valores.tarjetaId === tarjeta.id}
-              onPress={() => cambiar('tarjetaId', tarjeta.id)}
-            >
-              {tarjeta.nombre}
-            </Chip>
-          ))}
-        </View>
-        {tarjetasActivas.length === 0 && (
-          <Button icon="plus" onPress={() => router.push('/tarjetas/nueva')}>
-            No hay tarjetas activas: crear una
+          <Button icon="calendar" mode="outlined" onPress={abrirSelectorFecha} style={styles.campo}>
+            {`Fecha de compra: ${formatearFecha(valores.fechaCompra)}`}
           </Button>
-        )}
+
+          {permitePersonalizado && (
+            <SegmentedButtons
+              value={valores.modoReparto}
+              onValueChange={(v) => cambiar('modoReparto', v as ValoresGastoForm['modoReparto'])}
+              buttons={MODOS_REPARTO}
+              style={styles.campo}
+            />
+          )}
+
+          {valores.tipo === 'compartido' && (
+            <ParticipantesForm
+              filas={valores.participantes}
+              personalizado={personalizado}
+              montoUsuario={valores.montoUsuario}
+              onCambiarFilas={(filas) => cambiar('participantes', filas)}
+              onCambiarMontoUsuario={(monto) => cambiar('montoUsuario', monto)}
+            />
+          )}
+
+          {permiteDescuento && (
+            <CampoMonto label="Descuento (opcional)" valor={valores.descuento} onCambiar={(v) => cambiar('descuento', v)} />
+          )}
+          {permiteDescuento && hayDescuento && (
+            <SegmentedButtons
+              value={valores.tipoDescuento}
+              onValueChange={(v) => cambiar('tipoDescuento', v as ValoresGastoForm['tipoDescuento'])}
+              buttons={TIPOS_DESCUENTO}
+              style={styles.campo}
+            />
+          )}
+
+          <TextInput
+            label="Cuotas"
+            value={valores.cuotas}
+            onChangeText={(texto) => cambiar('cuotas', texto)}
+            mode="outlined"
+            keyboardType="number-pad"
+            style={styles.campo}
+          />
+
+          <Text variant="labelLarge" style={styles.campo}>
+            Tarjeta
+          </Text>
+          <View style={styles.tarjetas}>
+            <Chip selected={valores.tarjetaId === null} onPress={() => cambiar('tarjetaId', null)}>
+              Sin tarjeta
+            </Chip>
+            {tarjetasDisponibles.map((tarjeta) => (
+              <Chip
+                key={tarjeta.id}
+                icon="credit-card-outline"
+                selected={valores.tarjetaId === tarjeta.id}
+                onPress={() => cambiar('tarjetaId', tarjeta.id)}
+              >
+                {tarjeta.deletedAt ? `${tarjeta.nombre} (archivada)` : tarjeta.nombre}
+              </Chip>
+            ))}
+          </View>
+          {tarjetasDisponibles.length === 0 && (
+            <Button icon="plus" onPress={() => router.push('/tarjetas/nueva')}>
+              No hay tarjetas activas: crear una
+            </Button>
+          )}
+
+        </Bloqueable>
 
         {erroresAMostrar.map((error) => (
           <HelperText key={error} type="error" visible>
@@ -195,7 +245,7 @@ export function GastoForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
           </HelperText>
         ))}
 
-        {partes && (
+        {partes && !soloDescripcion && (
           <List.Section title="Parte de cada persona">
             {partes.map((parte) => (
               <List.Item key={parte.nombre} title={parte.nombre} description={formatearMonto(parte.montoCents)} />
@@ -239,6 +289,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  bloqueado: {
+    opacity: 0.5,
   },
   boton: {
     marginTop: 16,

@@ -64,11 +64,14 @@ export default function DetalleGastoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const { datos: detalle, cargando, error, recargar } = useServicio(() => (id ? gastosService.obtenerDetalle(id) : undefined), [id])
 
+  const irAEditar = () => router.push(`/mis-gastos/${id}/editar`)
+
   return (
     <View style={styles.container}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Detalle del gasto" />
+        {detalle && <Appbar.Action icon="pencil-outline" accessibilityLabel="Editar gasto" onPress={irAEditar} />}
       </Appbar.Header>
 
       {cargando && !detalle ? (
