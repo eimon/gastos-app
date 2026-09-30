@@ -22,6 +22,71 @@ describe('validarGasto', () => {
     expect(errores).toContain('DESCUENTO_INVALIDO');
   });
 
+  test('rejects any discount with 1 cuota, for personal and shared gastos', () => {
+    const personal = validarGasto({ ...inputBase, descuentoCents: 10_00, tipoDescuento: 'uniforme' });
+    expect(personal).toContain('DESCUENTO_SOLO_EN_CUOTAS');
+    const compartido = validarGasto({
+      ...inputBase,
+      tipo: 'compartido',
+      participantes: ['Ana'],
+      descuentoCents: 10_00,
+      tipoDescuento: 'uniforme',
+    });
+    expect(compartido).toContain('DESCUENTO_SOLO_EN_CUOTAS');
+  });
+
+  test('accepts a discount with more than 1 cuota', () => {
+    const errores = validarGasto({
+      ...inputBase,
+      cuotas: 3,
+      tarjeta: { id: 'v', diaCierre: 25, diaVencimiento: 10 },
+      descuentoCents: 10_00,
+      tipoDescuento: 'uniforme',
+    });
+    expect(errores).toEqual([]);
+  });
+
+  test('rejects blank and duplicate participant names', () => {
+    const compartido = { ...inputBase, tipo: 'compartido' as const };
+    expect(validarGasto({ ...compartido, participantes: ['Ana', ' '] })).toContain('PARTICIPANTE_VACIO');
+    expect(validarGasto({ ...compartido, participantes: ['Ana', 'ANA '] })).toContain('PARTICIPANTE_DUPLICADO');
+  });
+
+  describe('custom amounts', () => {
+    const compartido: InputGasto = {
+      ...inputBase,
+      tipo: 'compartido',
+      montoTotalCents: 60_00,
+      participantes: ['Ana', 'Luis'],
+      montosPersonalizadosCents: [30_00, 20_00, 10_00],
+    };
+
+    test('accepts fixed amounts that sum to the total and plans a single cuota with that total', () => {
+      expect(validarGasto(compartido)).toEqual([]);
+      expect(planificarGasto(compartido).cuotas).toEqual([
+        { numero: 1, montoCents: 60_00, fechaCierre: null, fechaVencimiento: '2026-03-01' },
+      ]);
+    });
+
+    test('accepts a 0 amount for the payer only', () => {
+      expect(validarGasto({ ...compartido, montoTotalCents: 50_00, montosPersonalizadosCents: [30_00, 20_00, 0] })).toEqual([]);
+      expect(
+        validarGasto({ ...compartido, montoTotalCents: 30_00, montosPersonalizadosCents: [30_00, 0, 0] }),
+      ).toContain('MONTOS_PERSONALIZADOS_INVALIDOS');
+    });
+
+    test.each([
+      ['a sum different from the total', { montoTotalCents: 70_00 }],
+      ['a wrong number of amounts', { montosPersonalizadosCents: [30_00, 30_00] }],
+      ['a non-integer amount', { montoTotalCents: 60_50, montosPersonalizadosCents: [30_25, 20_25, 10] }],
+      ['a negative payer amount', { montoTotalCents: 40_00, montosPersonalizadosCents: [30_00, 20_00, -10_00] }],
+      ['cuotas > 1', { cuotas: 3, tarjeta: { id: 'v', diaCierre: 25, diaVencimiento: 10 } }],
+      ['a personal gasto', { tipo: 'personal' as const }],
+    ])('rejects %s', (_nombre, cambios) => {
+      expect(validarGasto({ ...compartido, ...cambios })).toContain('MONTOS_PERSONALIZADOS_INVALIDOS');
+    });
+  });
+
   test('rejects a personal gasto with cuotas > 1 and no card', () => {
     const errores = validarGasto({ ...inputBase, cuotas: 3, tarjeta: null });
     expect(errores).toContain('TARJETA_REQUERIDA');

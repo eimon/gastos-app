@@ -14,6 +14,7 @@ import {
   erroresVisibles,
   evaluarFormulario,
   fechaHoyISO,
+  type FilaParticipante,
   type ValoresGastoForm,
 } from '../../services/gastoFormulario'
 import { formatearFecha, formatearMonto } from '../../services/gastoVista'
@@ -27,6 +28,15 @@ const TIPOS_DESCUENTO = [
   { value: 'uniforme', label: 'Uniforme' },
   { value: 'prorrateo', label: 'Prorrateo' },
 ]
+
+/** Comma or line separated names -> participant rows (the row-by-row UI comes in the next PR). */
+function filasDesdeTexto(texto: string): FilaParticipante[] {
+  return texto
+    .split(/[,\n]/)
+    .map((nombre) => nombre.trim())
+    .filter((nombre) => nombre.length > 0)
+    .map((nombre, i) => ({ id: `${i}-${nombre}`, nombre, monto: null }))
+}
 
 function CampoMonto(props: { label: string; valor: number | null; onCambiar: (valor: number | null) => void }) {
   return (
@@ -57,8 +67,11 @@ export default function NuevoGastoScreen() {
     tipoDescuento: 'uniforme',
     cuotas: '1',
     tarjetaId: null,
-    participantes: '',
+    participantes: [],
+    modoReparto: 'iguales',
+    montoUsuario: null,
   }))
+  const [textoParticipantes, setTextoParticipantes] = useState('')
   const [intentoGuardar, setIntentoGuardar] = useState(false)
   const [guardando, setGuardando] = useState(false)
   // A ref, not just state: two taps in the same frame both see guardando=false.
@@ -72,6 +85,8 @@ export default function NuevoGastoScreen() {
   const { errores, plan } = evaluarFormulario(valores, tarjetasActivas)
   const erroresAMostrar = erroresVisibles(errores, valores, intentoGuardar)
   const hayDescuento = (valores.descuento ?? 0) > 0
+  // A discount only exists with more than 1 cuota; the form ignores it otherwise.
+  const permiteDescuento = Number.isInteger(Number(valores.cuotas)) && Number(valores.cuotas) > 1
 
   async function guardar() {
     if (guardandoRef.current) return
@@ -120,15 +135,20 @@ export default function NuevoGastoScreen() {
         {valores.tipo === 'compartido' && (
           <TextInput
             label="Participantes (separados por coma)"
-            value={valores.participantes}
-            onChangeText={(texto) => cambiar('participantes', texto)}
+            value={textoParticipantes}
+            onChangeText={(texto) => {
+              setTextoParticipantes(texto)
+              cambiar('participantes', filasDesdeTexto(texto))
+            }}
             mode="outlined"
             style={styles.campo}
           />
         )}
 
-        <CampoMonto label="Descuento (opcional)" valor={valores.descuento} onCambiar={(v) => cambiar('descuento', v)} />
-        {hayDescuento && (
+        {permiteDescuento && (
+          <CampoMonto label="Descuento (opcional)" valor={valores.descuento} onCambiar={(v) => cambiar('descuento', v)} />
+        )}
+        {permiteDescuento && hayDescuento && (
           <SegmentedButtons
             value={valores.tipoDescuento}
             onValueChange={(v) => cambiar('tipoDescuento', v as ValoresGastoForm['tipoDescuento'])}

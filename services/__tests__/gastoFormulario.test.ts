@@ -4,7 +4,7 @@ import {
   erroresVisibles,
   esFechaISOValida,
   evaluarFormulario,
-  parsearParticipantes,
+  esRepartoPersonalizado,
   type ValoresGastoForm,
 } from '../gastoFormulario';
 
@@ -19,18 +19,18 @@ const base: ValoresGastoForm = {
   tipoDescuento: 'uniforme',
   cuotas: '1',
   tarjetaId: null,
-  participantes: '',
+  participantes: [],
+  modoReparto: 'iguales',
+  montoUsuario: null,
 };
+
+const fila = (nombre: string, monto: number | null = null, id = nombre) => ({ id, nombre, monto });
 
 describe('helpers', () => {
   test('aCentavos rounds to integer cents and treats null as 0', () => {
     expect(aCentavos(10.5)).toBe(1050);
     expect(aCentavos(0.29)).toBe(29);
     expect(aCentavos(null)).toBe(0);
-  });
-
-  test('parsearParticipantes trims and drops empty names', () => {
-    expect(parsearParticipantes(' Ana, Luis ,, \nMar ')).toEqual(['Ana', 'Luis', 'Mar']);
   });
 
   test('esFechaISOValida rejects malformed and impossible dates', () => {
@@ -66,13 +66,78 @@ describe('evaluarFormulario', () => {
   });
 
   test('a discount equal to or above the total is rejected', () => {
-    expect(evaluarFormulario({ ...base, descuento: 300 }, []).errores).toEqual(['DESCUENTO_INVALIDO']);
-    expect(evaluarFormulario({ ...base, descuento: 400 }, []).errores).toEqual(['DESCUENTO_INVALIDO']);
+    const tres = { ...base, cuotas: '3', tarjetaId: 't1' };
+    expect(evaluarFormulario({ ...tres, descuento: 300 }, [tarjeta]).errores).toEqual(['DESCUENTO_INVALIDO']);
+    expect(evaluarFormulario({ ...tres, descuento: 400 }, [tarjeta]).errores).toEqual(['DESCUENTO_INVALIDO']);
+  });
+
+  test('with 1 cuota a stale discount is ignored instead of applied', () => {
+    const input = construirInputCrear({ ...base, descuento: 50 });
+    expect(input).toMatchObject({ descuentoCents: 0, tipoDescuento: null });
+    expect(evaluarFormulario({ ...base, descuento: 50 }, []).errores).toEqual([]);
   });
 
   test('a shared gasto needs at least one participant', () => {
     expect(evaluarFormulario({ ...base, tipo: 'compartido' }, []).errores).toEqual(['SIN_PARTICIPANTES']);
-    expect(evaluarFormulario({ ...base, tipo: 'compartido', participantes: 'Ana, Luis' }, []).errores).toEqual([]);
+    expect(
+      evaluarFormulario({ ...base, tipo: 'compartido', participantes: [fila('Ana'), fila('Luis')] }, []).errores,
+    ).toEqual([]);
+  });
+
+  test('rejects empty and duplicate participant names (trimmed, case-insensitive, including "Yo")', () => {
+    const conFilas = (...nombres: string[]) => ({ ...base, tipo: 'compartido' as const, participantes: nombres.map((n, i) => fila(n, null, String(i))) });
+    expect(evaluarFormulario(conFilas('Ana', '  '), []).errores).toEqual(['PARTICIPANTE_VACIO']);
+    expect(evaluarFormulario(conFilas('Ana', ' ana '), []).errores).toEqual(['PARTICIPANTE_DUPLICADO']);
+    expect(evaluarFormulario(conFilas('yo'), []).errores).toEqual(['PARTICIPANTE_DUPLICADO']);
+  });
+
+  describe('custom amounts (shared, 1 cuota)', () => {
+    const personalizado = {
+      ...base,
+      tipo: 'compartido' as const,
+      modoReparto: 'personalizado' as const,
+      monto: null,
+      participantes: [fila('Ana', 30), fila('Luis', 20.5)],
+      montoUsuario: 10,
+    };
+
+    test('the total is the sum of the amounts, the cuota shows it and each share is listed with the user last', () => {
+      const { errores, plan, partes } = evaluarFormulario(personalizado, []);
+      expect(errores).toEqual([]);
+      expect(plan?.cuotas[0].montoCents).toBe(6050);
+      expect(partes).toEqual([
+        { nombre: 'Ana', montoCents: 3000 },
+        { nombre: 'Luis', montoCents: 2050 },
+        { nombre: 'Yo', montoCents: 1000 },
+      ]);
+      expect(construirInputCrear(personalizado)).toMatchObject({
+        montoTotalCents: 6050,
+        montosPersonalizadosCents: [3000, 2050, 1000],
+      });
+    });
+
+    test('the user share may be 0 but another participant at 0 or empty is rejected', () => {
+      expect(evaluarFormulario({ ...personalizado, montoUsuario: null }, []).errores).toEqual([]);
+      expect(evaluarFormulario({ ...personalizado, participantes: [fila('Ana', 0), fila('Luis', 5)] }, []).errores).toEqual([
+        'MONTOS_PERSONALIZADOS_INVALIDOS',
+      ]);
+      expect(evaluarFormulario({ ...personalizado, participantes: [fila('Ana', null)] }, []).errores).toEqual([
+        'MONTOS_PERSONALIZADOS_INVALIDOS',
+      ]);
+    });
+
+    test('a zero total is rejected', () => {
+      expect(evaluarFormulario({ ...personalizado, participantes: [], montoUsuario: 0 }, []).errores).toContain('MONTO_INVALIDO');
+    });
+
+    test('with more than 1 cuota the custom mode does not apply and the equal split is used', () => {
+      const tres = { ...personalizado, monto: 90, cuotas: '3', tarjetaId: 't1' };
+      expect(esRepartoPersonalizado(tres)).toBe(false);
+      const { errores, partes } = evaluarFormulario(tres, [tarjeta]);
+      expect(errores).toEqual([]);
+      expect(partes).toBeNull();
+      expect(construirInputCrear(tres).montosPersonalizadosCents).toBeUndefined();
+    });
   });
 
   test('reports a missing description, an invalid date and an invalid cuota count without planning', () => {
@@ -93,7 +158,7 @@ describe('evaluarFormulario', () => {
 
 describe('construirInputCrear', () => {
   test('converts to cents, drops the discount type without a discount and ignores participants for personal', () => {
-    const input = construirInputCrear({ ...base, descripcion: ' Heladera ', monto: 12.34, participantes: 'Ana' });
+    const input = construirInputCrear({ ...base, descripcion: ' Heladera ', monto: 12.34, participantes: [fila('Ana')] });
     expect(input).toMatchObject({
       descripcion: 'Heladera',
       montoTotalCents: 1234,
@@ -113,7 +178,7 @@ describe('erroresVisibles', () => {
   });
 
   test('shows a too-large discount live once amount and discount are typed', () => {
-    const valores = { ...base, descuento: 500 };
-    expect(erroresVisibles(evaluarFormulario(valores, []).errores, valores, false)).toEqual(['DESCUENTO_INVALIDO']);
+    const valores = { ...base, descuento: 500, cuotas: '3', tarjetaId: 't1' };
+    expect(erroresVisibles(evaluarFormulario(valores, [tarjeta]).errores, valores, false)).toEqual(['DESCUENTO_INVALIDO']);
   });
 });

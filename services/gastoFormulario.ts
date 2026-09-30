@@ -15,7 +15,19 @@ import {
   type TarjetaGasto,
   type TipoGasto,
 } from '../domain/gasto';
+import { NOMBRE_USUARIO, sumarMontos } from '../domain/participantes';
 import type { InputCrearGasto } from './gastosService';
+import { aFechaISOLocal } from './fechaLocal';
+
+export type ModoReparto = 'iguales' | 'personalizado';
+
+/** One "other participant" row; `id` is a stable list key, not persisted. */
+export interface FilaParticipante {
+  id: string;
+  nombre: string;
+  /** Only used in custom mode. */
+  monto: number | null;
+}
 
 export interface ValoresGastoForm {
   descripcion: string;
@@ -29,21 +41,29 @@ export interface ValoresGastoForm {
   /** Raw text so an empty or invalid entry can be rejected instead of coerced. */
   cuotas: string;
   tarjetaId: string | null;
-  /** Comma or line separated names, excluding the user. */
-  participantes: string;
+  /** Other participants, excluding the user (always present as the payer). */
+  participantes: FilaParticipante[];
+  modoReparto: ModoReparto;
+  /** The user's own share in custom mode; may be 0. */
+  montoUsuario: number | null;
 }
 
 export type ErrorFormularioGasto = ErrorGasto | 'DESCRIPCION_REQUERIDA' | 'FECHA_INVALIDA';
 
 export const MENSAJES_ERROR_GASTO: Record<ErrorFormularioGasto, string> = {
   DESCRIPCION_REQUERIDA: 'La descripción es obligatoria.',
-  FECHA_INVALIDA: 'La fecha debe ser válida y tener el formato AAAA-MM-DD.',
+  FECHA_INVALIDA: 'La fecha de compra no es válida.',
   MONTO_INVALIDO: 'El monto debe ser mayor a cero.',
   DESCUENTO_INVALIDO: 'El descuento debe ser mayor o igual a cero y menor al monto total.',
   CUOTAS_INVALIDA: 'La cantidad de cuotas debe ser un número entero de 1 o más.',
   TARJETA_REQUERIDA: 'Para pagar en más de una cuota hay que elegir una tarjeta.',
   TIPO_DESCUENTO_REQUERIDO: 'Hay que elegir cómo se aplica el descuento.',
   SIN_PARTICIPANTES: 'Un gasto compartido necesita al menos un participante.',
+  DESCUENTO_SOLO_EN_CUOTAS: 'El descuento solo se puede aplicar cuando hay más de una cuota.',
+  MONTOS_PERSONALIZADOS_INVALIDOS:
+    'Cada participante debe tener un monto mayor a cero y el total debe ser mayor a cero.',
+  PARTICIPANTE_VACIO: 'Los participantes no pueden tener el nombre vacío.',
+  PARTICIPANTE_DUPLICADO: 'No puede haber participantes con el mismo nombre (ni llamarse "Yo").',
 };
 
 export function aCentavos(valor: number | null): number {
@@ -51,13 +71,6 @@ export function aCentavos(valor: number | null): number {
     return 0;
   }
   return Math.round(valor * 100);
-}
-
-export function parsearParticipantes(texto: string): string[] {
-  return texto
-    .split(/[,\n]/)
-    .map((nombre) => nombre.trim())
-    .filter((nombre) => nombre.length > 0);
 }
 
 export function esFechaISOValida(fecha: string): boolean {
@@ -71,23 +84,40 @@ export function esFechaISOValida(fecha: string): boolean {
 }
 
 export function fechaHoyISO(ahora: Date = new Date()): string {
-  const mes = String(ahora.getMonth() + 1).padStart(2, '0');
-  const dia = String(ahora.getDate()).padStart(2, '0');
-  return `${ahora.getFullYear()}-${mes}-${dia}`;
+  return aFechaISOLocal(ahora);
+}
+
+function cuotasNumericas(valores: ValoresGastoForm): number {
+  return valores.cuotas.trim() === '' ? Number.NaN : Number(valores.cuotas);
+}
+
+/** Custom amounts only exist for a shared gasto paid in exactly 1 cuota. */
+export function esRepartoPersonalizado(valores: ValoresGastoForm): boolean {
+  return valores.tipo === 'compartido' && valores.modoReparto === 'personalizado' && cuotasNumericas(valores) === 1;
+}
+
+/** Custom amounts in split order: other participants first, the user LAST. */
+export function montosPersonalizadosCents(valores: ValoresGastoForm): number[] {
+  return [...valores.participantes.map((fila) => aCentavos(fila.monto)), aCentavos(valores.montoUsuario)];
 }
 
 export function construirInputCrear(valores: ValoresGastoForm): InputCrearGasto {
-  const descuentoCents = aCentavos(valores.descuento);
+  const cuotas = cuotasNumericas(valores);
+  // The discount field is hidden with 1 cuota, so a stale value must not count.
+  const descuentoCents = cuotas > 1 ? aCentavos(valores.descuento) : 0;
+  const personalizado = esRepartoPersonalizado(valores);
+  const montos = personalizado ? montosPersonalizadosCents(valores) : undefined;
   return {
     tipo: valores.tipo,
     descripcion: valores.descripcion.trim(),
     fechaCompra: valores.fechaCompra,
-    montoTotalCents: aCentavos(valores.monto),
+    montoTotalCents: montos ? sumarMontos(montos) : aCentavos(valores.monto),
     descuentoCents,
     tipoDescuento: descuentoCents > 0 ? valores.tipoDescuento : null,
-    cuotas: valores.cuotas.trim() === '' ? Number.NaN : Number(valores.cuotas),
+    cuotas,
     tarjetaId: valores.tarjetaId,
-    participantes: valores.tipo === 'compartido' ? parsearParticipantes(valores.participantes) : [],
+    participantes: valores.tipo === 'compartido' ? valores.participantes.map((fila) => fila.nombre.trim()) : [],
+    montosPersonalizadosCents: montos,
   };
 }
 
@@ -95,6 +125,8 @@ export interface EvaluacionGasto {
   errores: ErrorFormularioGasto[];
   /** Cuota preview; null while any rule blocks planning. */
   plan: PlanGasto | null;
+  /** Each person's share (user last) in custom mode when the gasto is valid; else null. */
+  partes: { nombre: string; montoCents: number }[] | null;
 }
 
 /** Validates the form and, when valid, previews the cuota schedule via `planificarGasto`. */
@@ -110,6 +142,7 @@ export function evaluarFormulario(valores: ValoresGastoForm, tarjetasActivas: Ta
     cuotas: input.cuotas,
     tarjeta: tarjeta && { id: tarjeta.id, diaCierre: tarjeta.diaCierre, diaVencimiento: tarjeta.diaVencimiento },
     participantes: input.participantes,
+    montosPersonalizadosCents: input.montosPersonalizadosCents,
   };
 
   const errores: ErrorFormularioGasto[] = [];
@@ -124,7 +157,14 @@ export function evaluarFormulario(valores: ValoresGastoForm, tarjetasActivas: Ta
   errores.push(...erroresDominio);
 
   const plan = fechaValida && erroresDominio.length === 0 ? planificarGasto(inputDominio) : null;
-  return { errores, plan };
+  const partes =
+    plan && input.montosPersonalizadosCents
+      ? [...input.participantes, NOMBRE_USUARIO].map((nombre, i) => ({
+          nombre,
+          montoCents: input.montosPersonalizadosCents![i],
+        }))
+      : null;
+  return { errores, plan, partes };
 }
 
 /**
@@ -140,7 +180,13 @@ export function erroresVisibles(
   if (intentoGuardar) {
     return errores;
   }
-  const enVivo: ErrorFormularioGasto[] = ['FECHA_INVALIDA', 'CUOTAS_INVALIDA', 'TARJETA_REQUERIDA'];
+  const enVivo: ErrorFormularioGasto[] = [
+    'FECHA_INVALIDA',
+    'CUOTAS_INVALIDA',
+    'TARJETA_REQUERIDA',
+    'PARTICIPANTE_VACIO',
+    'PARTICIPANTE_DUPLICADO',
+  ];
   if ((valores.descuento ?? 0) > 0 && (valores.monto ?? 0) > 0) {
     enVivo.push('DESCUENTO_INVALIDO', 'TIPO_DESCUENTO_REQUERIDO');
   }

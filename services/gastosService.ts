@@ -21,6 +21,8 @@ export interface InputCrearGasto {
   tarjetaId: string | null;
   /** Other participants' names, excluding the user. Required for `tipo: 'compartido'`. */
   participantes: string[];
+  /** Fixed amount per person (others in order, the user LAST). Shared gasto with 1 cuota only. */
+  montosPersonalizadosCents?: Centavos[];
   /** Display name for the user's own share row. Defaults to "Yo". */
   nombreUsuario?: string;
 }
@@ -79,6 +81,7 @@ export async function crear(input: InputCrearGasto): Promise<gastosRepo.GastoCon
     cuotas: input.cuotas,
     tarjeta: resolverTarjetaParaCrear(db, input.tarjetaId),
     participantes: input.tipo === 'compartido' ? input.participantes : [],
+    montosPersonalizadosCents: input.montosPersonalizadosCents,
   });
 
   const participantes = construirParticipantes({
@@ -86,7 +89,7 @@ export async function crear(input: InputCrearGasto): Promise<gastosRepo.GastoCon
     participantes: input.participantes,
     nombreUsuario: input.nombreUsuario,
   });
-  const cuotas = construirCuotasRepo(plan, participantes.length);
+  const cuotas = construirCuotasRepo(plan, participantes.length, input.montosPersonalizadosCents);
 
   const resultado = db.transaction((tx) =>
     gastosRepo.crear(tx, {

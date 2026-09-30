@@ -50,6 +50,25 @@ describe('construirCuotasRepo', () => {
     expect(cuota.partes).toEqual([33_333_33, 33_333_33, 33_333_34]);
   });
 
+  test('uses the custom amounts as the shares instead of an equal split', () => {
+    const plan = planificarGasto({
+      tipo: 'compartido',
+      fechaCompra: '2026-03-10',
+      montoTotalCents: 60_00,
+      descuentoCents: 0,
+      tipoDescuento: null,
+      cuotas: 1,
+      tarjeta: null,
+      participantes: ['Juan', 'Pedro'],
+      montosPersonalizadosCents: [30_00, 20_00, 10_00],
+    });
+
+    const [cuota] = construirCuotasRepo(plan, 3, [30_00, 20_00, 10_00]);
+
+    expect(cuota.montoCents).toBe(60_00);
+    expect(cuota.partes).toEqual([30_00, 20_00, 10_00]);
+  });
+
   test('preserves cuota numero/montoCents/fechaVencimiento from the plan', () => {
     const plan = planificarGasto({
       tipo: 'personal',

@@ -1,5 +1,6 @@
 import { Centavos } from './dinero';
 import { calcularMontosCuotas, TipoDescuento } from './cuotas';
+import { sumarMontos, validarMontosPersonalizados, validarNombresParticipantes } from './participantes';
 import { calcularVencimientosTarjeta, FechaISO } from './vencimientos';
 
 export type TipoGasto = 'personal' | 'compartido';
@@ -19,6 +20,11 @@ export interface InputGasto {
   cuotas: number;
   tarjeta: TarjetaGasto | null;
   participantes: string[];
+  /**
+   * Fixed amount per person, other participants in order and the payer LAST.
+   * Only for a shared gasto with exactly 1 cuota; `montoTotalCents` must be their sum.
+   */
+  montosPersonalizadosCents?: Centavos[];
 }
 
 export type ErrorGasto =
@@ -27,7 +33,11 @@ export type ErrorGasto =
   | 'CUOTAS_INVALIDA'
   | 'TARJETA_REQUERIDA'
   | 'TIPO_DESCUENTO_REQUERIDO'
-  | 'SIN_PARTICIPANTES';
+  | 'SIN_PARTICIPANTES'
+  | 'DESCUENTO_SOLO_EN_CUOTAS'
+  | 'MONTOS_PERSONALIZADOS_INVALIDOS'
+  | 'PARTICIPANTE_VACIO'
+  | 'PARTICIPANTE_DUPLICADO';
 
 /**
  * Validates a gasto before planning it. Used both for inline form
@@ -68,8 +78,29 @@ export function validarGasto(input: InputGasto): ErrorGasto[] {
     errores.push('TIPO_DESCUENTO_REQUERIDO');
   }
 
+  // With a single payment the final price is typed directly, so a discount
+  // only makes sense when it has to be distributed across cuotas.
+  if (input.descuentoCents > 0 && input.cuotas === 1) {
+    errores.push('DESCUENTO_SOLO_EN_CUOTAS');
+  }
+
   if (input.tipo === 'compartido' && input.participantes.length === 0) {
     errores.push('SIN_PARTICIPANTES');
+  }
+
+  if (input.tipo === 'compartido') {
+    errores.push(...validarNombresParticipantes(input.participantes));
+  }
+
+  const montos = input.montosPersonalizadosCents;
+  if (
+    montos &&
+    (input.tipo !== 'compartido' ||
+      input.cuotas !== 1 ||
+      !validarMontosPersonalizados(montos, input.participantes.length + 1) ||
+      sumarMontos(montos) !== input.montoTotalCents)
+  ) {
+    errores.push('MONTOS_PERSONALIZADOS_INVALIDOS');
   }
 
   return errores;

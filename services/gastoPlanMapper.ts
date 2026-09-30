@@ -6,10 +6,10 @@
  * which TypeScript erases at compile time.
  */
 import type { planificarGasto, TipoGasto } from '../domain/gasto';
-import { repartirEntreParticipantes } from '../domain/participantes';
+import { NOMBRE_USUARIO, repartirEntreParticipantes } from '../domain/participantes';
 import type { InputCuota, InputParticipante } from '../data/repositories/gastosRepo';
 
-export const NOMBRE_USUARIO_POR_DEFECTO = 'Yo';
+export const NOMBRE_USUARIO_POR_DEFECTO = NOMBRE_USUARIO;
 
 export interface DatosParticipantes {
   tipo: TipoGasto;
@@ -37,16 +37,21 @@ export function construirParticipantes(input: DatosParticipantes): InputParticip
   ];
 }
 
-/** Splits every planned cuota amount evenly across `cantidadParticipantes` shares. */
+/**
+ * Splits every planned cuota amount evenly across `cantidadParticipantes`
+ * shares, or uses `montosPersonalizados` as the shares (single cuota only,
+ * already validated by the domain).
+ */
 export function construirCuotasRepo(
   plan: ReturnType<typeof planificarGasto>,
   cantidadParticipantes: number,
+  montosPersonalizados?: number[],
 ): InputCuota[] {
   return plan.cuotas.map((cuota) => ({
     numero: cuota.numero,
     montoCents: cuota.montoCents,
     fechaCierre: cuota.fechaCierre,
     fechaVencimiento: cuota.fechaVencimiento,
-    partes: repartirEntreParticipantes(cuota.montoCents, cantidadParticipantes),
+    partes: montosPersonalizados ?? repartirEntreParticipantes(cuota.montoCents, cantidadParticipantes),
   }));
 }
