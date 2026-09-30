@@ -25,6 +25,18 @@ describe('planificarDeuda', () => {
   });
 });
 
+describe('planificarDeuda rounding and clamping', () => {
+  test('the last cuota absorbs the leftover cents', () => {
+    const { cuotas } = planificarDeuda({ ...inputBase, montoTotalCents: 100_000 });
+    expect(cuotas.map((c) => c.montoCents)).toEqual([33_333, 33_333, 33_334]);
+  });
+
+  test('due dates clamp from the ORIGINAL day (the 31st)', () => {
+    const { cuotas } = planificarDeuda({ ...inputBase, cuotas: 4, fechaPrimerPago: '2026-01-31' });
+    expect(cuotas.map((c) => c.fechaVencimiento)).toEqual(['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30']);
+  });
+});
+
 describe('validarDeuda', () => {
   test('accepts a 30-year loan (360 cuotas) but rejects anything above the maximum', () => {
     expect(validarDeuda({ ...inputBase, cuotas: MAX_CUOTAS })).toEqual([]);
@@ -54,8 +66,13 @@ describe('validarDeuda', () => {
     expect(validarDeuda({ ...inputBase, acreedor: '   ' })).toContain('ACREEDOR_REQUERIDO');
   });
 
-  test('rejects an invalid fechaPrimerPago', () => {
+  test('rejects a blank descripcion', () => {
+    expect(validarDeuda({ ...inputBase, descripcion: '  ' })).toEqual(['DESCRIPCION_REQUERIDA']);
+  });
+
+  test('rejects an invalid fechaPrimerPago, including impossible calendar dates', () => {
     expect(validarDeuda({ ...inputBase, fechaPrimerPago: 'not-a-date' })).toContain('FECHA_INVALIDA');
+    expect(validarDeuda({ ...inputBase, fechaPrimerPago: '2026-13-01' })).toContain('FECHA_INVALIDA');
   });
 
   test('accepts a valid deuda with no errors', () => {

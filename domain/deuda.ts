@@ -1,6 +1,6 @@
 import { Centavos, dividirEnPartes } from './dinero';
 import { esCantidadCuotasValida } from './limites';
-import { calcularVencimientosMensuales, parsearFechaISO, FechaISO } from './vencimientos';
+import { calcularVencimientosMensuales, esFechaISOValida, FechaISO } from './vencimientos';
 
 export interface InputDeuda {
   acreedor: string;
@@ -10,15 +10,12 @@ export interface InputDeuda {
   fechaPrimerPago: FechaISO;
 }
 
-export type ErrorDeuda = 'MONTO_INVALIDO' | 'CUOTAS_INVALIDA' | 'ACREEDOR_REQUERIDO' | 'FECHA_INVALIDA';
-
-function esFechaISOValida(fecha: FechaISO): boolean {
-  if (typeof fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return false;
-  }
-  const { mes, dia } = parsearFechaISO(fecha);
-  return mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31;
-}
+export type ErrorDeuda =
+  | 'MONTO_INVALIDO'
+  | 'CUOTAS_INVALIDA'
+  | 'ACREEDOR_REQUERIDO'
+  | 'DESCRIPCION_REQUERIDA'
+  | 'FECHA_INVALIDA';
 
 /**
  * Validates a Deuda before planning it — symmetric with `validarGasto`.
@@ -40,6 +37,10 @@ export function validarDeuda(input: InputDeuda): ErrorDeuda[] {
 
   if (!input.acreedor || input.acreedor.trim().length === 0) {
     errores.push('ACREEDOR_REQUERIDO');
+  }
+
+  if (!input.descripcion || input.descripcion.trim().length === 0) {
+    errores.push('DESCRIPCION_REQUERIDA');
   }
 
   if (!esFechaISOValida(input.fechaPrimerPago)) {
