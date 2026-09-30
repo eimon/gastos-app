@@ -25,6 +25,37 @@ describe('planificarDeuda', () => {
   });
 });
 
+describe('planificarDeuda long schedules', () => {
+  const fechas = (primerPago: string, cuotas: number) =>
+    planificarDeuda({ ...inputBase, cuotas, fechaPrimerPago: primerPago }).cuotas.map((c) => c.fechaVencimiento);
+
+  test('the 31st over 14 cuotas crosses into 2028 and lands on Feb 29 of the leap year', () => {
+    const resultado = fechas('2027-01-31', 14);
+    expect(resultado[0]).toBe('2027-01-31');
+    expect(resultado[1]).toBe('2027-02-28');
+    expect(resultado[11]).toBe('2027-12-31');
+    expect(resultado[12]).toBe('2028-01-31');
+    expect(resultado[13]).toBe('2028-02-29');
+  });
+
+  test('a start on Feb 29 clamps to Feb 28 in a common year and returns to the 29th in the next leap year', () => {
+    const resultado = fechas('2028-02-29', 49);
+    expect(resultado.slice(0, 3)).toEqual(['2028-02-29', '2028-03-29', '2028-04-29']);
+    expect(resultado[12]).toBe('2029-02-28');
+    expect(resultado[48]).toBe('2032-02-29');
+  });
+
+  test('360 cuotas add up to the total, leftover cents included, and end 359 months later', () => {
+    const total = 1_000_000_07;
+    const { cuotas } = planificarDeuda({ ...inputBase, montoTotalCents: total, cuotas: MAX_CUOTAS, fechaPrimerPago: '2026-01-31' });
+    expect(cuotas).toHaveLength(MAX_CUOTAS);
+    expect(cuotas.reduce((suma, c) => suma + c.montoCents, 0)).toBe(total);
+    expect(cuotas[MAX_CUOTAS - 1].montoCents).toBe(Math.floor(total / MAX_CUOTAS) + (total % MAX_CUOTAS));
+    expect(cuotas[0].fechaVencimiento).toBe('2026-01-31');
+    expect(cuotas[MAX_CUOTAS - 1].fechaVencimiento).toBe('2055-12-31');
+  });
+});
+
 describe('planificarDeuda rounding and clamping', () => {
   test('the last cuota absorbs the leftover cents', () => {
     const { cuotas } = planificarDeuda({ ...inputBase, montoTotalCents: 100_000 });
