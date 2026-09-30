@@ -4,6 +4,7 @@ import { View, StyleSheet, FlatList, type ListRenderItemInfo } from 'react-nativ
 import { ActivityIndicator, Appbar, Button, Card, Chip, IconButton, List, Text } from 'react-native-paper'
 import { router, useLocalSearchParams } from 'expo-router'
 
+import { AvisoErrorRecarga } from '../../components/AvisoErrorRecarga'
 import { DialogoPago, type ModoPago } from '../../components/DialogoPago'
 import { ErrorReintentar } from '../../components/ErrorReintentar'
 import { useServicio } from '../../hooks/useServicio'
@@ -110,6 +111,8 @@ export default function DetalleGastoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const { datos: detalle, cargando, error, recargar } = useServicio(() => (id ? gastosService.obtenerDetalle(id) : undefined), [id])
 
+  // While leaving after a delete, the reload finds nothing: show a spinner instead of "not found".
+  const [saliendo, setSaliendo] = useState(false)
   const [pagoEnCurso, setPagoEnCurso] = useState<{ parteId: string; modo: ModoPago } | null>(null)
   const pagar = useCallback((parte: ParteDetalle, modo: ModoPago) => setPagoEnCurso({ parteId: parte.id, modo }), [])
   const cerrarPago = useCallback(() => setPagoEnCurso(null), [])
@@ -135,7 +138,13 @@ export default function DetalleGastoScreen() {
     }
     showConfirm('Eliminar gasto', `Se elimina «${detalle.gasto.descripcion}».`, () =>
       void ejecutar(async () => {
-        await gastosService.eliminar(detalle.gasto.id)
+        setSaliendo(true)
+        try {
+          await gastosService.eliminar(detalle.gasto.id)
+        } catch (err) {
+          setSaliendo(false)
+          throw err
+        }
         router.back()
       }, 'No se pudo eliminar el gasto.'),
     )
@@ -155,7 +164,9 @@ export default function DetalleGastoScreen() {
         {detalle && <Appbar.Action icon="delete-outline" accessibilityLabel="Eliminar gasto" onPress={eliminarGasto} />}
       </Appbar.Header>
 
-      {cargando && !detalle ? (
+      <AvisoErrorRecarga visible={!!error && !!detalle} mensaje="No se pudo actualizar el gasto." onReintentar={recargar} />
+
+      {(cargando && !detalle) || saliendo ? (
         <View style={styles.centro}>
           <ActivityIndicator size="large" />
         </View>

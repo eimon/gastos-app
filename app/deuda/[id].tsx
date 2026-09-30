@@ -4,6 +4,7 @@ import { View, StyleSheet, FlatList, type ListRenderItemInfo } from 'react-nativ
 import { ActivityIndicator, Appbar, Button, Card, Chip, IconButton, List, Text } from 'react-native-paper'
 import { router, useLocalSearchParams } from 'expo-router'
 
+import { AvisoErrorRecarga } from '../../components/AvisoErrorRecarga'
 import { DialogoPago, type ModoPago } from '../../components/DialogoPago'
 import { ErrorReintentar } from '../../components/ErrorReintentar'
 import { useServicio } from '../../hooks/useServicio'
@@ -78,6 +79,8 @@ export default function DetalleDeudaScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const { datos: detalle, cargando, error, recargar } = useServicio(() => (id ? deudasService.obtenerDetalle(id) : undefined), [id])
 
+  // While leaving after a delete, the reload finds nothing: show a spinner instead of "not found".
+  const [saliendo, setSaliendo] = useState(false)
   const [pagoEnCurso, setPagoEnCurso] = useState<{ cuotaId: string; modo: ModoPago } | null>(null)
   const pagar = useCallback((cuota: CuotaDeudaDetalle, modo: ModoPago) => setPagoEnCurso({ cuotaId: cuota.id, modo }), [])
   const cerrarPago = useCallback(() => setPagoEnCurso(null), [])
@@ -103,7 +106,13 @@ export default function DetalleDeudaScreen() {
     }
     showConfirm('Eliminar deuda', `Se elimina la deuda con ${detalle.deuda.acreedor}.`, () =>
       void ejecutar(async () => {
-        await deudasService.eliminar(detalle.deuda.id)
+        setSaliendo(true)
+        try {
+          await deudasService.eliminar(detalle.deuda.id)
+        } catch (err) {
+          setSaliendo(false)
+          throw err
+        }
         router.back()
       }, 'No se pudo eliminar la deuda.'),
     )
@@ -121,7 +130,9 @@ export default function DetalleDeudaScreen() {
         {detalle && <Appbar.Action icon="delete-outline" accessibilityLabel="Eliminar deuda" onPress={eliminarDeuda} />}
       </Appbar.Header>
 
-      {cargando && !detalle ? (
+      <AvisoErrorRecarga visible={!!error && !!detalle} mensaje="No se pudo actualizar la deuda." onReintentar={recargar} />
+
+      {(cargando && !detalle) || saliendo ? (
         <View style={styles.centro}>
           <ActivityIndicator size="large" />
         </View>
