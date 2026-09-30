@@ -1,7 +1,7 @@
 // app/mis-gastos/index.tsx - Gastos del mes seleccionado (por vencimiento de cuota)
 import { memo } from 'react'
 import { View, StyleSheet, FlatList, type ListRenderItemInfo } from 'react-native'
-import { ActivityIndicator, Appbar, Chip, List, Text } from 'react-native-paper'
+import { ActivityIndicator, Appbar, Chip, FAB, List, Text } from 'react-native-paper'
 import { router } from 'expo-router'
 
 import { useMonth } from '../../contexts/MonthContext'
@@ -32,6 +32,7 @@ const FilaCuota = memo(function FilaCuota({ cuota }: { cuota: CuotaListada }) {
 
 const renderCuota = ({ item }: ListRenderItemInfo<CuotaListada>) => <FilaCuota cuota={item} />
 const claveCuota = (cuota: CuotaListada) => `${cuota.gastoId}-${cuota.numero}`
+const irANuevoGasto = () => router.push('/mis-gastos/nuevo')
 const irATarjetas = () => router.push('/tarjetas')
 
 export default function MisGastosScreen() {
@@ -69,11 +70,13 @@ export default function MisGastosScreen() {
         </View>
       ) : !cuotas || cuotas.length === 0 ? (
         <View style={styles.centro}>
-          <Text>No hay gastos con vencimiento este mes.</Text>
+          <Text>No hay gastos con vencimiento este mes. Use el botón + para agregar uno.</Text>
         </View>
       ) : (
         <FlatList data={cuotas} keyExtractor={claveCuota} renderItem={renderCuota} />
       )}
+
+      <FAB icon="plus" label="Nuevo gasto" style={styles.fab} onPress={irANuevoGasto} />
     </View>
   )
 }
@@ -98,5 +101,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+  },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
   },
 })
