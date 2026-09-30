@@ -5,6 +5,7 @@
  */
 import { estadoDePago, type ResumenPago } from '../domain/pagos';
 import type { CuotaParticipante, Gasto, GastoConDetalle } from '../data/repositories/gastosRepo';
+import type { Pago } from '../data/repositories/pagosRepo';
 
 const MESES = [
   'Enero',
@@ -54,6 +55,8 @@ export function etiquetaTipoDescuento(tipo: string | null): string {
   return (tipo && ETIQUETAS_DESCUENTO[tipo]) || '';
 }
 
+export type PagoDetalle = Pick<Pago, 'id' | 'montoCents' | 'fecha' | 'medioPago'>;
+
 export interface ParteDetalle {
   id: string;
   nombre: string;
@@ -61,6 +64,8 @@ export interface ParteDetalle {
   montoCents: number;
   /** Null for the user's own share: it is informational and has no payment status. */
   resumen: ResumenPago | null;
+  /** Live pagos of the share, oldest first. */
+  pagos: PagoDetalle[];
 }
 
 export interface CuotaDetalle {
@@ -76,10 +81,10 @@ export interface DetalleGasto {
   cuotas: CuotaDetalle[];
 }
 
-/** Builds the read-only detail view-model; `pagosPorParte` maps a share id to its payment amounts. */
+/** Builds the detail view-model; `pagosPorParte` maps a share id to its live pagos. */
 export function armarDetalleGasto(
   detalle: GastoConDetalle,
-  pagosPorParte: Record<string, number[]>,
+  pagosPorParte: Record<string, PagoDetalle[]>,
   tarjetaNombre: string | null,
 ): DetalleGasto {
   const participantes = new Map(detalle.participantes.map((p) => [p.id, p]));
@@ -89,12 +94,14 @@ export function armarDetalleGasto(
   const armarParte =(parte: CuotaParticipante): ParteDetalle => {
     const participante = participantes.get(parte.participanteId);
     const esUsuario = participante?.esUsuario ?? false;
+    const pagos = pagosPorParte[parte.id] ?? [];
     return {
       id: parte.id,
       nombre: participante?.nombre ?? '',
       esUsuario,
       montoCents: parte.montoCents,
-      resumen: esUsuario ? null : estadoDePago(parte.montoCents, pagosPorParte[parte.id] ?? []),
+      resumen: esUsuario ? null : estadoDePago(parte.montoCents, pagos.map((pago) => pago.montoCents)),
+      pagos,
     };
   };
 
@@ -109,4 +116,9 @@ export function armarDetalleGasto(
       partes: [...cuota.partes].sort((a, b) => ordenDe(a) - ordenDe(b)).map(armarParte),
     })),
   };
+}
+
+/** Total live pagos across every share of the gasto. */
+export function contarPagos(detalle: DetalleGasto): number {
+  return detalle.cuotas.reduce((total, cuota) => total + cuota.partes.reduce((n, parte) => n + parte.pagos.length, 0), 0);
 }

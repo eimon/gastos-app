@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import type { Executor } from '../db/client';
 import { generarId } from '../db/ids';
@@ -40,7 +40,17 @@ export function listarPorCuotaParticipante(exec: Executor, cuotaParticipanteId: 
     .select()
     .from(pagos)
     .where(and(eq(pagos.cuotaParticipanteId, cuotaParticipanteId), isNull(pagos.deletedAt)))
+    .orderBy(asc(pagos.fecha), asc(pagos.createdAt))
     .all();
+}
+
+/** Cancelling ("anular") a pago is a soft delete: it stops counting toward the share's paid amount. */
+export function anular(exec: Executor, id: string): void {
+  exec
+    .update(pagos)
+    .set({ deletedAt: sql`(current_timestamp)`, updatedAt: sql`(current_timestamp)` })
+    .where(and(eq(pagos.id, id), isNull(pagos.deletedAt)))
+    .run();
 }
 
 export function listarPorDeudaCuota(exec: Executor, deudaCuotaId: string): Pago[] {

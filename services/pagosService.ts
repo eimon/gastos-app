@@ -86,6 +86,12 @@ function verificarYRegistrar(tx: Transaction, input: InputRegistrarPago): pagosR
   });
 }
 
+/** Cancels a pago (soft delete); the share's paid amount and status are derived again. */
+export async function anular(pagoId: string): Promise<void> {
+  pagosRepo.anular(db, pagoId);
+  emitirCambio();
+}
+
 /**
  * Re-checks `validarPago` INSIDE the transaction against freshly reloaded
  * pagos (not whatever restante the screen last rendered) — this guards

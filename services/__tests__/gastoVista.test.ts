@@ -1,6 +1,7 @@
 import type { GastoConDetalle } from '../../data/repositories/gastosRepo';
 import {
   armarDetalleGasto,
+  contarPagos,
   etiquetaTipoDescuento,
   formatearFecha,
   formatearMonto,
@@ -26,6 +27,8 @@ describe('formatters', () => {
   });
 });
 
+const pago = (id: string, montoCents: number) => ({ id, montoCents, fecha: '2026-11-05', medioPago: 'efectivo' as const });
+
 describe('armarDetalleGasto', () => {
   const detalle = {
     gasto: { id: 'g1' },
@@ -48,12 +51,20 @@ describe('armarDetalleGasto', () => {
   } as unknown as GastoConDetalle;
 
   test('orders shares by participant order, derives status for others and none for the user', () => {
-    const resultado = armarDetalleGasto(detalle, { s1: [200], s2: [] }, 'Visa');
+    const resultado = armarDetalleGasto(detalle, { s1: [pago('x1', 200)], s2: [] }, 'Visa');
     const [ana, yo] = resultado.cuotas[0].partes;
     expect(resultado.tarjetaNombre).toBe('Visa');
     expect(ana).toMatchObject({ nombre: 'Ana', esUsuario: false });
     expect(ana.resumen).toEqual({ pagado: 200, restante: 300, estado: 'parcial' });
-    expect(yo).toMatchObject({ nombre: 'Yo', esUsuario: true, resumen: null });
+    expect(yo).toMatchObject({ nombre: 'Yo', esUsuario: true, resumen: null, pagos: [] });
+    expect(ana.pagos).toEqual([pago('x1', 200)]);
+  });
+
+  test('contarPagos adds the live pagos of every share', () => {
+    const conPagos = armarDetalleGasto(detalle, { s1: [pago('x1', 100), pago('x2', 100)], s2: [] }, null);
+
+    expect(contarPagos(conPagos)).toBe(2);
+    expect(contarPagos(armarDetalleGasto(detalle, {}, null))).toBe(0);
   });
 });
 

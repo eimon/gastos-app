@@ -7,7 +7,7 @@ import * as gastosRepo from '../data/repositories/gastosRepo';
 import * as pagosRepo from '../data/repositories/pagosRepo';
 import * as tarjetasRepo from '../data/repositories/tarjetasRepo';
 import { emitirCambio } from './cambios';
-import { armarDetalleGasto, rangoDelMes, type DetalleGasto } from './gastoVista';
+import { armarDetalleGasto, rangoDelMes, type DetalleGasto, type PagoDetalle } from './gastoVista';
 import { construirCuotasRepo, construirParticipantes } from './gastoPlanMapper';
 import {
   GastoRechazadoError,
@@ -144,10 +144,10 @@ export async function obtenerDetalle(id: string): Promise<DetalleGasto | undefin
     return undefined;
   }
 
-  const pagosPorParte: Record<string, number[]> = {};
+  const pagosPorParte: Record<string, PagoDetalle[]> = {};
   for (const cuota of detalle.cuotas) {
     for (const parte of cuota.partes) {
-      pagosPorParte[parte.id] = pagosRepo.listarPorCuotaParticipante(db, parte.id).map((pago) => pago.montoCents);
+      pagosPorParte[parte.id] = pagosRepo.listarPorCuotaParticipante(db, parte.id);
     }
   }
   const tarjeta = detalle.gasto.tarjetaId ? tarjetasRepo.obtener(db, detalle.gasto.tarjetaId) : undefined;
