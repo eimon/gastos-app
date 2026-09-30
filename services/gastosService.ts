@@ -13,6 +13,7 @@ import {
   GastoRechazadoError,
   construirEdicion,
   exigirSinPagos,
+  nucleoSinCambios,
   valoresDesdeDetalle,
   type NucleoGasto,
 } from './gastoEdicion';
@@ -172,7 +173,9 @@ export async function editar(id: string, input: InputEditarGasto): Promise<void>
     if (input.descripcion.trim() === '') {
       throw new Error(MENSAJES_ERROR_GASTO.DESCRIPCION_REQUERIDA);
     }
-    gastosRepo.actualizarDescripcion(db, id, input.descripcion.trim());
+    if (!gastosRepo.actualizarDescripcion(db, id, input.descripcion.trim())) {
+      throw new GastoRechazadoError('GASTO_NO_ENCONTRADO');
+    }
     emitirCambio();
     return;
   }
@@ -181,12 +184,19 @@ export async function editar(id: string, input: InputEditarGasto): Promise<void>
   // one transaction (matching pagosService.registrar's pattern), so a pago
   // landing between the check and the write is impossible.
   db.transaction((tx) => {
-    exigirSinPagos(gastosRepo.tieneAlgunPago(tx, id), 'BLOQUEADO_POR_PAGO');
-
     const actual = gastosRepo.obtenerConDetalle(tx, id);
     if (!actual) {
       throw new GastoRechazadoError('GASTO_NO_ENCONTRADO');
     }
+
+    // Nothing structural changed: write the description only, so no cuota is
+    // rebuilt (and no cancelled pago is purged) by a no-op save.
+    if (nucleoSinCambios(actual, nucleo)) {
+      gastosRepo.actualizarDescripcion(tx, id, input.descripcion.trim());
+      return;
+    }
+
+    exigirSinPagos(gastosRepo.tieneAlgunPago(tx, id), 'BLOQUEADO_POR_PAGO');
 
     // An archived card is only acceptable when this gasto already uses it.
     const tarjeta =

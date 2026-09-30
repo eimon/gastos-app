@@ -4,6 +4,7 @@ import {
   construirEdicion,
   conservarVencimientos,
   exigirSinPagos,
+  nucleoSinCambios,
   valoresDesdeDetalle,
   type NucleoGasto,
 } from '../gastoEdicion';
@@ -130,6 +131,13 @@ describe('valoresDesdeDetalle', () => {
     });
   });
 
+  test('loads a legacy 1-cuota discount as the net price so saving normalizes it', () => {
+    const legacy = gastoGuardado({ cantidadCuotas: 1, tarjetaId: null, descuentoCents: 20_00, tipoDescuento: 'uniforme' });
+    const valores = valoresDesdeDetalle(legacy);
+
+    expect(valores).toMatchObject({ monto: 180, descuento: null, cuotas: '1' });
+  });
+
   function compartido(montos: [number, number]): GastoConDetalle {
     return {
       gasto: {
@@ -195,5 +203,72 @@ describe('exigirSinPagos', () => {
       expect(err).toBeInstanceOf(GastoRechazadoError);
       expect((err as GastoRechazadoError).codigo).toBe('BLOQUEADO_POR_PAGO');
     }
+  });
+});
+
+describe('nucleoSinCambios', () => {
+  function compartidoGuardado(montos: [number, number] = [30_00, 30_00]): GastoConDetalle {
+    return {
+      gasto: {
+        tipo: 'compartido',
+        fechaCompra: '2026-03-20',
+        montoTotalCents: 60_00,
+        descuentoCents: 0,
+        tipoDescuento: null,
+        cantidadCuotas: 1,
+        tarjetaId: null,
+      },
+      participantes: [
+        { id: 'p1', nombre: 'Ana', esUsuario: false, orden: 0 },
+        { id: 'p2', nombre: 'Yo', esUsuario: true, orden: 1 },
+      ],
+      cuotas: [
+        {
+          numero: 1,
+          montoCents: 60_00,
+          partes: [
+            { participanteId: 'p2', montoCents: montos[1] },
+            { participanteId: 'p1', montoCents: montos[0] },
+          ],
+        },
+      ],
+    } as unknown as GastoConDetalle;
+  }
+
+  const igual = (cambios: Partial<NucleoGasto> = {}): NucleoGasto => ({
+    tipo: 'compartido',
+    fechaCompra: '2026-03-20',
+    montoTotalCents: 60_00,
+    descuentoCents: 0,
+    tipoDescuento: null,
+    cuotas: 1,
+    tarjetaId: null,
+    participantes: ['Ana'],
+    ...cambios,
+  });
+
+  test('is true for the stored core, even when the shares come back in another order', () => {
+    expect(nucleoSinCambios(compartidoGuardado(), igual())).toBe(true);
+  });
+
+  test('is true for stored custom amounts that the form sends back unchanged', () => {
+    expect(nucleoSinCambios(compartidoGuardado([45_00, 15_00]), igual({ montosPersonalizadosCents: [45_00, 15_00] }))).toBe(
+      true,
+    );
+  });
+
+  test.each([
+    ['amount', { montoTotalCents: 70_00 }],
+    ['date', { fechaCompra: '2026-03-21' }],
+    ['card', { tarjetaId: 't1' }],
+    ['participant name', { participantes: ['Ani'] }],
+    ['participant count', { participantes: ['Ana', 'Luis'] }],
+    ['custom amounts', { montosPersonalizadosCents: [50_00, 10_00] }],
+  ])('is false when the %s changes', (_nombre, cambios) => {
+    expect(nucleoSinCambios(compartidoGuardado(), igual(cambios as Partial<NucleoGasto>))).toBe(false);
+  });
+
+  test('is false when stored custom shares no longer match an equal-split form', () => {
+    expect(nucleoSinCambios(compartidoGuardado([45_00, 15_00]), igual())).toBe(false);
   });
 });

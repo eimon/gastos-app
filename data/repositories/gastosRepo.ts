@@ -250,13 +250,17 @@ export function eliminar(exec: Executor, id: string): void {
     .run();
 }
 
-/** Only the description stays editable once a gasto has recorded repayments. */
-export function actualizarDescripcion(exec: Executor, id: string, descripcion: string): void {
-  exec
+/**
+ * Only the description stays editable once a gasto has recorded repayments.
+ * Returns false when no live gasto has that id (missing or soft-deleted).
+ */
+export function actualizarDescripcion(exec: Executor, id: string, descripcion: string): boolean {
+  const { changes } = exec
     .update(gastos)
     .set({ descripcion, updatedAt: sql`(current_timestamp)` })
-    .where(eq(gastos.id, id))
+    .where(and(eq(gastos.id, id), isNull(gastos.deletedAt)))
     .run();
+  return changes > 0;
 }
 
 /** Gates `gastosService.editar`: amount/cuotas/participantes lock once any (non-deleted) pago exists. */

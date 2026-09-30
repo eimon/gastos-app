@@ -115,6 +115,41 @@ export function construirEdicion(
   };
 }
 
+/**
+ * True when `nucleo` describes exactly what is already stored (date, amounts,
+ * discount, cuotas, card, participants and every share). Such an edit changes
+ * nothing structural, so only the description is written and no cuota or
+ * pago row is rebuilt.
+ */
+export function nucleoSinCambios(actual: GastoConDetalle, nucleo: NucleoGasto): boolean {
+  const { gasto, participantes } = actual;
+  const otros = participantes.filter((p) => !p.esUsuario).map((p) => p.nombre);
+  const esperados = nucleo.tipo === 'compartido' ? nucleo.participantes : [];
+
+  const mismoNucleo =
+    gasto.tipo === nucleo.tipo &&
+    gasto.fechaCompra === nucleo.fechaCompra &&
+    gasto.montoTotalCents === nucleo.montoTotalCents &&
+    gasto.descuentoCents === nucleo.descuentoCents &&
+    (gasto.tipoDescuento ?? null) === nucleo.tipoDescuento &&
+    gasto.cantidadCuotas === nucleo.cuotas &&
+    gasto.tarjetaId === nucleo.tarjetaId &&
+    otros.length === esperados.length &&
+    otros.every((nombre, i) => nombre === esperados[i]);
+  if (!mismoNucleo || actual.cuotas.length !== nucleo.cuotas) {
+    return false;
+  }
+
+  const posicion = new Map(participantes.map((p, i) => [p.id, i]));
+  return actual.cuotas.every((cuota) => {
+    const guardadas = [...cuota.partes]
+      .sort((a, b) => (posicion.get(a.participanteId) ?? 0) - (posicion.get(b.participanteId) ?? 0))
+      .map((parte) => parte.montoCents);
+    const previstas = nucleo.montosPersonalizadosCents ?? repartirEntreParticipantes(cuota.montoCents, participantes.length);
+    return guardadas.length === previstas.length && guardadas.every((monto, i) => monto === previstas[i]);
+  });
+}
+
 /** Form values for a stored gasto. Custom mode is inferred from shares that differ from the equal split. */
 export function valoresDesdeDetalle(detalle: GastoConDetalle): ValoresGastoForm {
   const { gasto, participantes } = detalle;
@@ -141,8 +176,10 @@ export function valoresDesdeDetalle(detalle: GastoConDetalle): ValoresGastoForm 
   return {
     descripcion: gasto.descripcion,
     fechaCompra: gasto.fechaCompra,
-    monto: gasto.montoTotalCents / 100,
-    descuento: gasto.descuentoCents > 0 ? gasto.descuentoCents / 100 : null,
+    // A legacy 1-cuota gasto may carry a discount, which is no longer allowed: load
+    // the net price as the amount so the total paid stays the same and saving normalizes it.
+    monto: (gasto.cantidadCuotas === 1 ? gasto.montoTotalCents - gasto.descuentoCents : gasto.montoTotalCents) / 100,
+    descuento: gasto.cantidadCuotas > 1 && gasto.descuentoCents > 0 ? gasto.descuentoCents / 100 : null,
     tipo: gasto.tipo as TipoGasto,
     tipoDescuento: (gasto.tipoDescuento as TipoDescuento | null) ?? 'uniforme',
     cuotas: String(gasto.cantidadCuotas),
