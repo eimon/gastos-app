@@ -236,6 +236,10 @@ export default function LoginScreen() {
           <Button mode="text" onPress={() => router.push('/tarjetas')}>
             Gestionar tarjetas (dev)
           </Button>
+          {/* TODO(offline-redesign PR 4b): remove when the login gate is removed. */}
+          <Button mode="text" onPress={() => router.push('/mis-gastos')}>
+            Mis gastos (dev)
+          </Button>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

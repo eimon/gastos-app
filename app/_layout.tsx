@@ -18,10 +18,10 @@ export default function RootLayout() {
   const [loading, setLoading] = useState(true)
   const pathname = usePathname()
   // TODO(offline-redesign PR 4b): remove this bypass along with the login
-  // gate itself. Tarjetas (PR 3) must be reachable while `LoginScreen` still
-  // blocks everything else, since the user has no working Supabase login —
-  // see components/LoginScreen.tsx's "Gestionar tarjetas (dev)" link.
-  const enTarjetas = pathname.startsWith('/tarjetas')
+  // gate itself. Tarjetas (PR 3) and Mis gastos (PR 4a) must be reachable
+  // while `LoginScreen` still blocks everything else, since the user has no
+  // working Supabase login — see the "(dev)" links in components/LoginScreen.tsx.
+  const enTarjetas = pathname.startsWith('/tarjetas') || pathname.startsWith('/mis-gastos')
   // Bumped by DatabaseProvider's "Reintentar" action to force a fresh mount
   // (and therefore a fresh useMigrations attempt) after a migration error.
   const [intentoDb, setIntentoDb] = useState(0)
