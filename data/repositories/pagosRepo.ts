@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { Executor } from '../db/client';
 import { generarId } from '../db/ids';
@@ -58,5 +58,19 @@ export function listarPorDeudaCuota(exec: Executor, deudaCuotaId: string): Pago[
     .select()
     .from(pagos)
     .where(and(eq(pagos.deudaCuotaId, deudaCuotaId), isNull(pagos.deletedAt)))
+    .orderBy(asc(pagos.fecha), asc(pagos.createdAt))
+    .all();
+}
+
+/** Live pagos of several Deuda cuotas in one query, oldest first. */
+export function listarPorDeudaCuotas(exec: Executor, deudaCuotaIds: string[]): Pago[] {
+  if (deudaCuotaIds.length === 0) {
+    return [];
+  }
+  return exec
+    .select()
+    .from(pagos)
+    .where(and(inArray(pagos.deudaCuotaId, deudaCuotaIds), isNull(pagos.deletedAt)))
+    .orderBy(asc(pagos.fecha), asc(pagos.createdAt))
     .all();
 }
