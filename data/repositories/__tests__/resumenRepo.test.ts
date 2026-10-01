@@ -137,6 +137,17 @@ describeConSqlite('resumenRepo against real SQLite (foreign keys ON)', () => {
       ]);
     });
 
+    test('leaves fully paid shares in the database and brings them back when the paying pago is anulado', () => {
+      const g = gastoCompartido({ cuotas: [{ vence: '2026-04-15', ana: 10_000, yo: 10_000 }] });
+      pagarParte(parteDeAna(g).id, 4_000);
+      const ultimo = pagarParte(parteDeAna(g).id, 6_000);
+
+      expect(resumenRepo.listarPartesACobrarHasta(db, '2026-04-30')).toEqual([]);
+
+      pagosRepo.anular(db, ultimo.id);
+      expect(resumenRepo.listarPartesACobrarHasta(db, '2026-04-30').map((f) => f.pagadoCents)).toEqual([4_000]);
+    });
+
     test('excludes the user share, deleted gastos, and shares due after the month (inclusive on the last day)', () => {
       gastoCompartido({
         tarjetaId: tarjetasRepo.crear(db, { nombre: 'Visa', diaCierre: 25, diaVencimiento: 5 }).id,
@@ -165,6 +176,11 @@ describeConSqlite('resumenRepo against real SQLite (foreign keys ON)', () => {
       deudasRepo.eliminar(db, deuda('Borrada', ['2026-04-01']).deuda.id);
 
       const filas = resumenRepo.listarCuotasDeDeudaHasta(db, '2026-04-30');
+
+      const [segunda] = deudasRepo.obtenerConCuotas(db, banco.deuda.id)!.cuotas.slice(1);
+      pagosRepo.registrar(db, { deudaCuotaId: segunda.id, montoCents: 3_000, medioPago: 'efectivo', fecha: '2026-04-20', notas: null });
+      const filasSinPagada = resumenRepo.listarCuotasDeDeudaHasta(db, '2026-04-30');
+      expect(filasSinPagada.map((f) => f.fechaVencimiento)).toEqual(['2026-03-15']);
 
       expect(filas.map((f) => [f.acreedor, f.fechaVencimiento, f.pagadoCents])).toEqual([
         ['Banco X', '2026-03-15', 1_000],
