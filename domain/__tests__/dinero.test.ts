@@ -11,6 +11,7 @@ describe('dividirEnPartes', () => {
 describe('dividirEnPartes safety cap', () => {
   test('refuses an absurd number of parts instead of allocating it', () => {
     expect(() => dividirEnPartes(100, 10_000_000_000)).toThrow();
-    expect(dividirEnPartes(1000, 360)).toHaveLength(360);
+    expect(dividirEnPartes(1000, 30)).toHaveLength(30);
+    expect(() => dividirEnPartes(1000, 31)).toThrow();
   });
 });

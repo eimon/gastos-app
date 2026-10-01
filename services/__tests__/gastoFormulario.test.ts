@@ -152,13 +152,13 @@ describe('evaluarFormulario', () => {
   });
 
   test('an absurd cuota count is rejected without planning (no freeze, no RangeError)', () => {
-    for (const cuotas of ['361', '300000', '10000000000']) {
+    for (const cuotas of ['31', '300000', '10000000000']) {
       const { errores, plan } = evaluarFormulario({ ...base, cuotas, tarjetaId: 't1' }, [tarjeta]);
       expect(errores).toEqual(['CUOTAS_INVALIDA']);
       expect(plan).toBeNull();
     }
-    expect(evaluarFormulario({ ...base, cuotas: '360', tarjetaId: 't1' }, [tarjeta]).errores).toEqual([]);
-    expect(MENSAJES_ERROR_GASTO.CUOTAS_INVALIDA).toContain('360');
+    expect(evaluarFormulario({ ...base, cuotas: '30', tarjetaId: 't1' }, [tarjeta]).errores).toEqual([]);
+    expect(MENSAJES_ERROR_GASTO.CUOTAS_INVALIDA).toBe('La cantidad de cuotas debe ser un número entero entre 1 y 30.');
   });
 
   test('an amount above the cap is rejected and the message states the maximum', () => {

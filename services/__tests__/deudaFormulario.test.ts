@@ -52,9 +52,9 @@ describe('evaluarFormularioDeuda', () => {
   });
 
   test('rejects cuotas above the maximum with the maximum in the message', () => {
-    const { errores } = evaluarFormularioDeuda(valores({ cuotas: '361' }));
+    const { errores } = evaluarFormularioDeuda(valores({ cuotas: '31' }));
     expect(errores).toEqual(['CUOTAS_INVALIDA']);
-    expect(MENSAJES_ERROR_DEUDA.CUOTAS_INVALIDA).toContain('360');
+    expect(MENSAJES_ERROR_DEUDA.CUOTAS_INVALIDA).toContain('30');
   });
 });
 

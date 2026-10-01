@@ -115,9 +115,10 @@ describe('validarGasto', () => {
 
   test('rejects more cuotas than the maximum, accepts exactly the maximum', () => {
     const tarjeta = { id: 'v', diaCierre: 25, diaVencimiento: 10 };
-    expect(validarGasto({ ...inputBase, cuotas: MAX_CUOTAS + 1, tarjeta })).toContain('CUOTAS_INVALIDA');
+    expect(validarGasto({ ...inputBase, cuotas: 31, tarjeta })).toEqual(['CUOTAS_INVALIDA']);
     expect(validarGasto({ ...inputBase, cuotas: 10_000_000_000, tarjeta })).toContain('CUOTAS_INVALIDA');
-    expect(validarGasto({ ...inputBase, cuotas: MAX_CUOTAS, tarjeta })).toEqual([]);
+    expect(validarGasto({ ...inputBase, cuotas: 30, tarjeta })).toEqual([]);
+    expect(MAX_CUOTAS).toBe(30);
     expect(() => planificarGasto({ ...inputBase, cuotas: 10_000_000_000, tarjeta })).toThrow('Gasto invalido');
   });
 
