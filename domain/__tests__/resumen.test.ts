@@ -70,6 +70,39 @@ describe('cobrosPorPersona ("Me deben")', () => {
   });
 });
 
+describe('saldos pendientes (remaining, vencido and future)', () => {
+  const juan = (montoCents: number, pagos: number[], fechaVencimiento: string) => ({
+    nombre: 'Juan',
+    montoCents,
+    pagos,
+    fechaVencimiento,
+  });
+
+  test('splits del mes and vencido on the remaining amount, skips paid shares and ignores future ones', () => {
+    const cobros = cobrosPorPersona(
+      [
+        juan(10_000, [4_000], '2026-03-31'), // vencido, partially paid -> 6.000
+        juan(10_000, [], '2026-04-01'), // del mes (first day)
+        juan(5_000, [5_000], '2026-04-10'), // fully paid -> skipped
+        juan(7_000, [], '2026-04-30'), // del mes (last day)
+        juan(9_000, [], '2026-05-01'), // future -> excluded
+      ],
+      abril2026,
+    );
+
+    expect(cobros).toEqual([{ nombre: 'Juan', delMesCents: 17_000, vencidoCents: 6_000, totalCents: 23_000 }]);
+  });
+
+  test('a share due on the last day of the previous month is vencido, never del mes', () => {
+    const [linea] = deudasPorAcreedor(
+      [{ acreedor: 'Banco X', montoCents: 3_000, pagos: [], fechaVencimiento: '2025-12-31' }],
+      { mes: 1, año: 2026 },
+    );
+
+    expect(linea).toMatchObject({ delMesCents: 0, vencidoCents: 3_000 });
+  });
+});
+
 describe('deudasPorAcreedor ("Debo")', () => {
   test('shows a Deuda cuota due in the current month', () => {
     const deudas = deudasPorAcreedor(
