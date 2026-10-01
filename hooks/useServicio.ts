@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 
 import { suscribirseACambios } from '../services/cambios';
+import { claveDeDeps, esVigente, estaCargando } from '../services/datosVigentes';
 
 export interface ResultadoServicio<T> {
   datos: T | undefined;
@@ -25,6 +26,13 @@ export interface ResultadoServicio<T> {
  * (e.g. one that captured an outdated `mesActual`/`añoActual` from a
  * previous render), no matter what `deps` contains.
  *
+ * **Stale data contract**: loaded data and errors are tagged with a key derived from `deps`
+ * (see `services/datosVigentes.ts`). When `deps` changes (another month, another id), the
+ * previous data is NOT exposed: `datos` is `undefined` and `cargando` is true until the new
+ * load resolves, or `error` is set if it fails, so a screen never shows one month's figures
+ * under another month's header. Reloads for the SAME deps (focus, `cambios`) keep showing the
+ * current data while they run. Only the latest request applies its result.
+ *
  * `deps` only decides WHEN to auto-reload on change (via a plain
  * `useEffect`, skipped on the very first render since `useFocusEffect`
  * already covers the initial load) — it never decides which `cargar`
@@ -37,27 +45,43 @@ export function useServicio<T>(
   cargar: () => Promise<T> | T,
   deps: unknown[] = [],
 ): ResultadoServicio<T> {
-  const [datos, setDatos] = useState<T>();
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [cargado, setCargado] = useState<{ valor: T; clave: string }>();
+  const [fallo, setFallo] = useState<{ error: Error; clave: string } | null>(null);
+  const [enCurso, setEnCurso] = useState(true);
 
+  const claveActual = claveDeDeps(deps);
+
+  // Refs are written in effects, declared before the deps effect below so that effect's
+  // reload already sees the new key and the latest `cargar`.
   const cargarRef = useRef(cargar);
+  const claveRef = useRef(claveActual);
   useEffect(() => {
     cargarRef.current = cargar;
+    claveRef.current = claveActual;
   });
+  const peticionRef = useRef(0);
 
   const recargar = useCallback(() => {
-    setCargando(true);
+    const peticion = ++peticionRef.current;
+    const clave = claveRef.current;
+    const esLaUltima = () => peticion === peticionRef.current;
+    setEnCurso(true);
     Promise.resolve(cargarRef.current())
-      .then((resultado) => {
-        setDatos(resultado);
-        setError(null);
+      .then((valor) => {
+        if (esLaUltima()) {
+          setCargado({ valor, clave });
+          setFallo(null);
+        }
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err : new Error(String(err)));
+        if (esLaUltima()) {
+          setFallo({ error: err instanceof Error ? err : new Error(String(err)), clave });
+        }
       })
       .finally(() => {
-        setCargando(false);
+        if (esLaUltima()) {
+          setEnCurso(false);
+        }
       });
   }, []);
 
@@ -82,5 +106,12 @@ export function useServicio<T>(
 
   useEffect(() => suscribirseACambios(recargar), [recargar]);
 
-  return { datos, cargando, error, recargar };
+  const hayDatosVigentes = esVigente(cargado?.clave, claveActual);
+  const errorVigente = fallo && esVigente(fallo.clave, claveActual) ? fallo.error : null;
+  return {
+    datos: hayDatosVigentes ? cargado?.valor : undefined,
+    cargando: estaCargando(enCurso, hayDatosVigentes, errorVigente !== null),
+    error: errorVigente,
+    recargar,
+  };
 }
