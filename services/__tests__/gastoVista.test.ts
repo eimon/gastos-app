@@ -15,6 +15,9 @@ describe('formatters', () => {
   test('rangoDelMes returns the first and last day, including leap years', () => {
     expect(rangoDelMes(10, 2026)).toEqual({ desde: '2026-10-01', hasta: '2026-10-31' });
     expect(rangoDelMes(2, 2028)).toEqual({ desde: '2028-02-01', hasta: '2028-02-29' });
+    expect(rangoDelMes(2, 2027)).toEqual({ desde: '2027-02-01', hasta: '2027-02-28' });
+    expect(rangoDelMes(12, 2026)).toEqual({ desde: '2026-12-01', hasta: '2026-12-31' });
+    expect(rangoDelMes(4, 2026)).toEqual({ desde: '2026-04-01', hasta: '2026-04-30' });
   });
 
   test('formatearMonto groups thousands and always shows two decimals', () => {
