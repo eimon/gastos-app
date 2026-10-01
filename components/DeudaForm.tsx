@@ -13,8 +13,6 @@ import {
   MENSAJES_ERROR_DEUDA,
   erroresVisiblesDeuda,
   evaluarFormularioDeuda,
-  resumirPlanDeuda,
-  textoCuotasOcultas,
   type ValoresDeudaForm,
 } from '../services/deudaFormulario'
 import { esErrorDeReglas } from '../services/errorDominio'
@@ -42,7 +40,6 @@ export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
   }
 
   const { errores, plan } = evaluarFormularioDeuda(valores)
-  const resumen = plan ? resumirPlanDeuda(plan.cuotas) : null
 
   // Imperative Android dialog: it opens once per press, so a re-render can't re-open it.
   function abrirSelectorFecha() {
@@ -119,24 +116,15 @@ export function DeudaForm({ titulo, textoGuardar, valoresIniciales, onGuardar }:
           </HelperText>
         ))}
 
-        {plan && resumen && (
+        {plan && (
           <List.Section title="Vista previa de cuotas">
-            {resumen.primeras.map((cuota) => (
+            {plan.cuotas.map((cuota) => (
               <List.Item
                 key={cuota.numero}
                 title={`Cuota ${cuota.numero} de ${plan.cuotas.length} · ${formatearMonto(cuota.montoCents)}`}
                 description={`Vence el ${formatearFecha(cuota.fechaVencimiento)}`}
               />
             ))}
-            {resumen.ultima && (
-              <>
-                <List.Item title={textoCuotasOcultas(resumen.ocultas)} />
-                <List.Item
-                  title={`Cuota ${resumen.ultima.numero} de ${plan.cuotas.length} · ${formatearMonto(resumen.ultima.montoCents)}`}
-                  description={`Vence el ${formatearFecha(resumen.ultima.fechaVencimiento)}`}
-                />
-              </>
-            )}
           </List.Section>
         )}
 

@@ -7,7 +7,6 @@
 import {
   planificarDeuda,
   validarDeuda,
-  type CuotaDeudaPlan,
   type ErrorDeuda,
   type InputDeuda,
   type PlanDeuda,
@@ -80,24 +79,4 @@ export function evaluarFormularioDeuda(valores: ValoresDeudaForm): EvaluacionDeu
 /** Before the first save attempt only the date and cuotas errors show live; afterwards every error does. */
 export function erroresVisiblesDeuda(errores: ErrorDeuda[], intentoGuardar: boolean): ErrorDeuda[] {
   return intentoGuardar ? errores : errores.filter((e) => e === 'FECHA_INVALIDA' || e === 'CUOTAS_INVALIDA');
-}
-
-const CUOTAS_VISIBLES = 12;
-
-/** "… 1 cuota más" versus "… N cuotas más". */
-export const textoCuotasOcultas = (ocultas: number): string => `… ${ocultas} ${ocultas === 1 ? 'cuota más' : 'cuotas más'}`;
-
-/**
- * A 30-year loan has 360 cuotas, too many to render as a preview: show the first ones, how many
- * are hidden, and ALWAYS the last (the one that absorbs the leftover cents).
- */
-export function resumirPlanDeuda(cuotas: CuotaDeudaPlan[]): { primeras: CuotaDeudaPlan[]; ocultas: number; ultima: CuotaDeudaPlan | null } {
-  if (cuotas.length <= CUOTAS_VISIBLES) {
-    return { primeras: cuotas, ocultas: 0, ultima: null };
-  }
-  return {
-    primeras: cuotas.slice(0, CUOTAS_VISIBLES - 1),
-    ocultas: cuotas.length - CUOTAS_VISIBLES,
-    ultima: cuotas[cuotas.length - 1],
-  };
 }

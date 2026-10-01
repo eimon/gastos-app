@@ -3,8 +3,6 @@ import {
   construirInputDeuda,
   erroresVisiblesDeuda,
   evaluarFormularioDeuda,
-  resumirPlanDeuda,
-  textoCuotasOcultas,
   valoresDesdeDeuda,
   valoresInicialesDeuda,
   type ValoresDeudaForm,
@@ -81,27 +79,5 @@ test('valoresDesdeDeuda loads a stored deuda back into the form', () => {
     monto: 1500.5,
     cuotas: '12',
     fechaPrimerPago: '2026-05-10',
-  });
-});
-
-test('the hidden cuotas text uses the singular for exactly one', () => {
-  expect(textoCuotasOcultas(1)).toBe('… 1 cuota más');
-  expect(textoCuotasOcultas(2)).toBe('… 2 cuotas más');
-  expect(resumirPlanDeuda(evaluarFormularioDeuda(valores({ cuotas: '13' })).plan!.cuotas).ocultas).toBe(1);
-});
-
-describe('resumirPlanDeuda', () => {
-  const plan = (cuotas: number) => evaluarFormularioDeuda(valores({ cuotas: String(cuotas) })).plan!.cuotas;
-
-  test('a short plan is shown in full', () => {
-    expect(resumirPlanDeuda(plan(12))).toMatchObject({ ocultas: 0, ultima: null });
-    expect(resumirPlanDeuda(plan(12)).primeras).toHaveLength(12);
-  });
-
-  test('a long plan shows the first cuotas, the hidden count and always the last cuota', () => {
-    const resumen = resumirPlanDeuda(plan(360));
-    expect(resumen.primeras).toHaveLength(11);
-    expect(resumen.ocultas).toBe(348);
-    expect(resumen.ultima?.numero).toBe(360);
   });
 });
