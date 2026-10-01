@@ -132,6 +132,16 @@ describeConSqlite('deudasService against real SQLite (foreign keys ON)', () => {
     expect(await deudasService.listarDelMes(1, 2026)).toEqual([]);
   });
 
+  test('30 cuotas are stored (sum and last date exact) and 31 are rejected without storing anything', async () => {
+    const { cuotas } = await deudasService.crear({ ...base, montoTotalCents: 1_000_007, cuotas: 30, fechaPrimerPago: '2026-01-31' });
+    expect(cuotas).toHaveLength(30);
+    expect(cuotas.reduce((suma, c) => suma + c.montoCents, 0)).toBe(1_000_007);
+    expect(cuotas[29].fechaVencimiento).toBe('2028-06-30');
+
+    expect(await codigos(deudasService.crear({ ...base, cuotas: 31 }))).toEqual(['CUOTAS_INVALIDA']);
+    expect(db.select().from(deudas).all()).toHaveLength(1);
+  });
+
   test('crear rejects an invalid deuda with coded errors and stores nothing', async () => {
     expect(await codigos(deudasService.crear({ ...base, descripcion: ' ', cuotas: 0 }))).toEqual(['CUOTAS_INVALIDA', 'DESCRIPCION_REQUERIDA']);
     expect(db.select().from(deudas).all()).toHaveLength(0);
