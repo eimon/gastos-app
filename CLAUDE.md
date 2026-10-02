@@ -20,7 +20,7 @@ npx drizzle-kit generate   # generate a migration after editing data/db/schema.t
 ```
 
 - Run lint with `npx expo lint --no-cache ...` when `import/no-unresolved` looks stale.
-- DB-level tests use `test/dbPrueba.ts` (an expo-sqlite fake backed by `node:sqlite`), which needs **Node 22.5+**. Without it those suites skip with a warning; with `CI` set they fail.
+- DB-level tests use `test/dbPrueba.ts` (an expo-sqlite fake backed by `node:sqlite`), which needs **Node 22.13+**. Without it those suites skip with a warning; with `CI` set they fail.
 - Never run `npm audit fix` (especially `--force`).
 
 ## Architecture
@@ -33,34 +33,22 @@ Layering, one direction only: `domain/` -> `data/` -> `services/` -> `hooks/` ->
 | `data/` | `db/schema.ts`, `db/client.ts`, `DatabaseProvider` (runs migrations before rendering), `repositories/*Repo.ts` (Drizzle queries only). |
 | `services/` | Orchestrate domain plans and repo writes inside one transaction; emit `cambios` events. Many files are DB-free helpers (`*Formulario`, `*Vista`, `*Edicion`, `orden`). |
 | `hooks/` | `useServicio(fn, deps)` loads on focus and on `cambios`; never exposes data loaded for other deps. `useAlturaTeclado` lifts UI above the keyboard. |
+| `lib/` | Small shared helpers: `ejecutar.ts` (action runner), `alerts.ts` (alert dialogs). |
+| `contexts/` | React contexts; `MonthContext` holds the selected month. |
+| `types/` | Ambient type declarations (`global.d.ts`). |
 | `app/`, `components/` | Screens and shared UI. Screens call services/hooks, never repos or Drizzle. |
 
 The layering is a convention; ESLint does not enforce it.
 
 Routes: tabs in `app/(tabs)/` (`index` = Gastos, `deudas`, `resumen`); `app/mis-gastos/` (new, `[id]`, `[id]/editar`), `app/deuda/` (nueva, `[id]`, `[id]/editar`), `app/tarjetas/`. Payments are a dialog (`DialogoPago`) inside the detail screens, not routes. `MonthContext` holds the selected month; lists filter by cuota due date.
 
-## Data rules
+## Data rules and migrations
 
-- Money is integer cents (`Centavos`). Never use floats. Splits go through `dividirEnPartes`: the last part absorbs the remainder.
-- Calendar dates are `'YYYY-MM-DD'` text, built from local date parts (`services/fechaLocal.ts`). Audit columns are ISO-UTC text.
-- IDs are UUID text from `expo-crypto`. Every table has `created_at`, `updated_at` and `deleted_at` (soft delete). Every query must filter `deleted_at IS NULL` on gastos, deudas and pagos.
-- Paid status is derived from the sum of live pagos, never stored. The user's own share is informational and cannot be paid.
-- Limits live in `domain/limites.ts`: at most 30 cuotas, amount capped by `MAX_MONTO_CENTS`.
-- Anything with a live pago cannot be deleted (anular the pago first) and only its description (gasto) or acreedor/description (deuda) stays editable.
-- Order names in JS with `services/orden.ts`, never with SQL `COLLATE NOCASE` (ASCII only).
-- Transactions with the expo-sqlite driver are synchronous: no `await` inside `db.transaction`. Repos take an `Executor` (`db` or `tx`).
-- `PRAGMA foreign_keys = ON` is set in `data/db/client.ts`; tombstoned pagos must be purged before replacing the cuotas they reference.
-
-## Migrations
-
-- Edit `data/db/schema.ts`, then `npx drizzle-kit generate`. It writes `drizzle/NNNN_*.sql` and updates `drizzle/meta` and `drizzle/migrations.js`; commit all of them.
-- Never edit or delete a migration that has shipped. Add a new one instead; keep changes additive.
-- `.sql` files are bundled via `babel-plugin-inline-import` and the metro `sql` source extension. `useMigrations` runs pending migrations at startup.
-- Do not run SQL by hand against a user's data; schema changes only go through generated migrations.
+Single source: [DATABASE_RULES.md](DATABASE_RULES.md). Summary: money is integer cents, dates are `YYYY-MM-DD` text, every table is soft-deleted (filter `deleted_at IS NULL`), and transactions are synchronous. Schema changes go only through `npx drizzle-kit generate`; never edit a migration that has shipped. Read DATABASE_RULES.md before touching `data/` or `drizzle/`.
 
 ## Conventions
 
-- Identifiers, file names, DB tables/columns (snake_case) and UI copy are Spanish (gasto, cuota, tarjeta, deuda, pago). Code comments, docs and commit messages are English. Keep extending it that way.
+- Identifiers, file names, DB tables/columns (snake_case) and UI copy are Spanish (gasto, cuota, tarjeta, deuda, pago). New comments, docs and commit messages are in English; some older file-header comments are still in Spanish.
 - UI copy uses impersonal or infinitive Spanish ("Tocar + para agregar", "No se pudo ..."), no voseo. Cancelling a payment is "Anular pago".
 - Relative imports (the `@/*` alias maps to `app/*` only).
 - Forms and actions show `err.message` only for rules errors (`esErrorDeReglas`); other errors are `console.error`-ed with a generic message.

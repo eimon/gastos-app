@@ -22,7 +22,21 @@ The database is a local SQLite file (`gastos.db`) managed with Drizzle. The sche
 | Foreign keys are enforced (`PRAGMA foreign_keys = ON` in `data/db/client.ts`) | Purge tombstoned pagos before replacing the cuotas they reference |
 | Transactions are synchronous with the expo-sqlite driver | No `await` inside `db.transaction` |
 | Order text in JS (`services/orden.ts`), not with `COLLATE NOCASE` | SQLite folds ASCII only |
+| Repos take an `Executor` (`db` or `tx`) | The same query runs standalone or inside a transaction |
+| Do not run SQL by hand against a user's data | Schema changes only go through generated migrations |
+
+## Data and domain invariants
+
+- Money is `Centavos` (integer cents), never floats. Splits go through `dividirEnPartes`: the last part absorbs the remainder.
+- Calendar dates are `'YYYY-MM-DD'` text built from local date parts (`services/fechaLocal.ts`). Audit columns are ISO-UTC text. IDs are UUID text from `expo-crypto`.
+- Paid status is derived from the sum of live pagos, never stored. The user's own share is informational and cannot be paid.
+- Limits live in `domain/limites.ts`: at most 30 cuotas, amount capped by `MAX_MONTO_CENTS`.
+- Anything with a live pago cannot be deleted (anular the pago first); only its description (gasto) or acreedor/description (deuda) stays editable.
+
+## Bundling
+
+`.sql` files are bundled via `babel-plugin-inline-import` and the metro `sql` source extension. `useMigrations` runs pending migrations at startup.
 
 ## Testing
 
-Repository and service DB tests run on `node:sqlite` through `test/dbPrueba.ts` (Node 22.5+) and apply every `drizzle/*.sql` file, so a broken migration fails the suite. Expo Go still needs a manual check for a fresh install and for upgrading from the previous migration.
+Repository and service DB tests run on `node:sqlite` through `test/dbPrueba.ts` (Node 22.13+) and apply every `drizzle/*.sql` file, so a broken migration fails the suite. Expo Go still needs a manual check for a fresh install and for upgrading from the previous migration.

@@ -4,7 +4,7 @@ Offline, single-user expense tracker for Android. Track credit cards, personal a
 
 ## Quick path
 
-Requirements: Node 22.5+ and the Expo Go app (SDK 57) on an Android device or emulator.
+Requirements: Node 22.13+ and the Expo Go app (SDK 57) on an Android device or emulator.
 
 ```bash
 npm install
@@ -34,7 +34,7 @@ npm run lint               # ESLint through expo lint
 npx drizzle-kit generate   # generate a migration after changing data/db/schema.ts
 ```
 
-DB-level tests run against `node:sqlite` and need Node 22.5+. Without it they are skipped locally and fail when `CI` is set.
+DB-level tests run against `node:sqlite` and need Node 22.13+. Without it they are skipped locally and fail when `CI` is set.
 
 ## Project structure
 
@@ -43,6 +43,9 @@ domain/      pure rules and math (money in integer cents)
 data/        Drizzle schema, DB client, repositories
 services/    use cases: domain plans + repository writes in one transaction
 hooks/       useServicio and keyboard helpers
+lib/         shared helpers (ejecutar.ts, alerts.ts)
+contexts/    React contexts (MonthContext: selected month)
+types/       ambient type declarations
 app/         expo-router screens (tabs: Gastos, Deudas, Resumen)
 components/  shared UI (forms, payment dialog)
 drizzle/     generated SQL migrations
