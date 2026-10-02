@@ -20,10 +20,6 @@
       },
       "package": "com.gastosapp.mobile"
     },
-    "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
-    },
     "plugins": [
       "expo-router",
       "@react-native-community/datetimepicker",
