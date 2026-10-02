@@ -1,137 +1,42 @@
-# Reglas de Base de Datos del Proyecto
+# Database rules
 
-## Principios Generales
+The database is a local SQLite file (`gastos.db`) managed with Drizzle. The schema lives in `data/db/schema.ts`; migrations are generated into `drizzle/`.
 
-### Ejecución Manual
-- **TODAS** las operaciones de base de datos se ejecutan manualmente
-- El asistente AI **NUNCA** ejecutará comandos SQL directamente
-- Todos los cambios de base de datos deben ser revisados antes de su ejecución
+## Changing the schema
 
-### Estructura de Archivos
-- Todos los scripts SQL se almacenan en la carpeta `database/`
-- Cada migración debe tener un número incremental para mantener el orden
-- Formato de nombres: `001_descripcion_migración.sql`, `002_otra_migración.sql`, etc.
+1. Edit `data/db/schema.ts`.
+2. Run `npx drizzle-kit generate`. It adds `drizzle/NNNN_*.sql`, updates `drizzle/meta/` and rewrites `drizzle/migrations.js`.
+3. Review the generated SQL and commit all of the generated files together with the schema change.
+4. Start the app: `DatabaseProvider` runs pending migrations before rendering and shows an error with a retry action if one fails.
 
-## Sistema de Migraciones
+## Rules
 
-### Numeración
-- Las migraciones se numeran secuencialmente: 001, 002, 003, etc.
-- **NUNCA** reutilizar números de migración
-- Mantener el orden cronológico estricto
+| Rule | Reason |
+|------|--------|
+| Never edit, rename or delete a migration that has shipped | Installed apps already applied it; the journal must stay consistent |
+| Prefer additive changes (new tables, nullable or defaulted columns) | SQLite has limited `ALTER TABLE`; users have data on their devices |
+| Do not write SQL by hand outside generated migrations | Keeps `schema.ts`, the journal and the SQL in sync |
+| Every table has `id` (UUID text), `created_at`, `updated_at`, `deleted_at` | Soft delete; sync-ready |
+| Money is integer cents; calendar dates are `YYYY-MM-DD` text | Exact sums, no timezone drift |
+| Filter `deleted_at IS NULL` in every query on gastos, deudas and pagos | Soft-deleted rows must never surface |
+| Foreign keys are enforced (`PRAGMA foreign_keys = ON` in `data/db/client.ts`) | Purge tombstoned pagos before replacing the cuotas they reference |
+| Transactions are synchronous with the expo-sqlite driver | No `await` inside `db.transaction` |
+| Order text in JS (`services/orden.ts`), not with `COLLATE NOCASE` | SQLite folds ASCII only |
+| Repos take an `Executor` (`db` or `tx`) | The same query runs standalone or inside a transaction |
+| Do not run SQL by hand against a user's data | Schema changes only go through generated migrations |
 
-### Migración Completa
-- Cada nueva migración debe incluir **TODOS** los cambios necesarios para crear la base de datos desde cero
-- El archivo `000_migracion_completa.sql` debe contener siempre el estado actual completo de la base de datos
-- Cuando se crea una nueva migración incremental, se debe actualizar también la migración completa
+## Data and domain invariants
 
-### Estructura de Archivos de Migración
+- Money is `Centavos` (integer cents), never floats. Splits go through `dividirEnPartes`: the last part absorbs the remainder.
+- Calendar dates are `'YYYY-MM-DD'` text built from local date parts (`services/fechaLocal.ts`). Audit columns are ISO-UTC text. IDs are UUID text from `expo-crypto`.
+- Paid status is derived from the sum of live pagos, never stored. The user's own share is informational and cannot be paid.
+- Limits live in `domain/limites.ts`: at most 30 cuotas, amount capped by `MAX_MONTO_CENTS`.
+- Anything with a live pago cannot be deleted (anular the pago first); only its description (gasto) or acreedor/description (deuda) stays editable.
 
-```
-database/
-├── 000_migracion_completa.sql          # Estado completo actual de la BD
-├── 001_inicial.sql                     # Primera migración
-├── 002_agregar_tabla_usuarios.sql      # Segunda migración
-├── 003_agregar_solicitudes_pago.sql    # Tercera migración
-├── 004_nueva_funcionalidad.sql         # Próxima migración
-└── README.md                           # Documentación de migraciones
-```
+## Bundling
 
-## Contenido de las Migraciones
+`.sql` files are bundled via `babel-plugin-inline-import` and the metro `sql` source extension. `useMigrations` runs pending migrations at startup.
 
-### Migración Completa (000_migracion_completa.sql)
-- Debe contener:
-  - Creación de todos los tipos ENUM
-  - Creación de todas las tablas con sus constraints
-  - Creación de todos los índices
-  - Creación de todas las funciones y procedimientos
-  - Políticas RLS (Row Level Security)
-  - Datos iniciales si los hay
+## Testing
 
-### Migraciones Incrementales
-- Cada migración incremental debe:
-  - Tener un comentario explicativo al inicio
-  - Incluir verificaciones de existencia (IF NOT EXISTS, etc.)
-  - Ser idempotente (se puede ejecutar múltiples veces sin error)
-  - Incluir rollback si es necesario
-
-### Ejemplo de Migración Incremental
-
-```sql
--- Migración 004: Agregar campo 'activo' a tabla usuarios
--- Fecha: 2024-01-XX
--- Descripción: Agregar campo para marcar usuarios activos/inactivos
-
--- Verificar si la columna ya existe
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                   WHERE table_name='usuarios' AND column_name='activo') THEN
-        ALTER TABLE usuarios ADD COLUMN activo BOOLEAN DEFAULT true;
-    END IF;
-END $$;
-
--- Crear índice si no existe
-CREATE INDEX IF NOT EXISTS idx_usuarios_activo ON usuarios(activo);
-```
-
-## Proceso de Trabajo
-
-### Para el Asistente AI
-1. **NUNCA** ejecutar comandos SQL
-2. Generar scripts en la carpeta `database/`
-3. Asignar el siguiente número incremental disponible
-4. Actualizar la migración completa con los cambios
-5. Documentar claramente los cambios
-
-### Para el Desarrollador
-1. Revisar el script generado
-2. Ejecutar manualmente en el entorno de desarrollo
-3. Probar la funcionalidad
-4. Ejecutar en producción cuando esté validado
-5. Marcar la migración como aplicada
-
-## Convenciones de Nomenclatura
-
-### Archivos
-- `000_migracion_completa.sql` - Migración completa actual
-- `XXX_descripcion_corta.sql` - Migraciones incrementales
-- `test_XXXX.sql` - Scripts de prueba (opcional)
-- `rollback_XXX.sql` - Scripts de rollback (opcional)
-
-### Objetos de Base de Datos
-- Tablas: `snake_case` (ej: `gastos_detalle`)
-- Columnas: `snake_case` (ej: `usuario_id`)
-- Funciones: `snake_case` (ej: `crear_solicitud_pago`)
-- Tipos ENUM: `snake_case` (ej: `estado_solicitud`)
-- Índices: `idx_tabla_columna` (ej: `idx_gastos_usuario_id`)
-
-## Validaciones
-
-### Antes de Crear una Migración
-- Verificar que el número incremental sea correcto
-- Asegurar que la migración completa esté actualizada
-- Documentar el propósito del cambio
-- Incluir verificaciones de existencia
-
-### Después de Aplicar una Migración
-- Verificar que la estructura sea correcta
-- Probar las funciones nuevas/modificadas
-- Validar que los datos existentes no se corrompan
-- Actualizar la documentación si es necesario
-
-## Herramientas Recomendadas
-
-- **pgAdmin** o **DBeaver** para ejecución manual de scripts
-- **Git** para control de versiones de los scripts
-- **Backup** antes de aplicar migraciones importantes
-
-## Notas Importantes
-
-⚠️ **NUNCA** modificar migraciones ya aplicadas en producción
-⚠️ **SIEMPRE** hacer backup antes de aplicar migraciones
-⚠️ **PROBAR** primero en entorno de desarrollo
-⚠️ **DOCUMENTAR** todos los cambios realizados
-
----
-
-*Este documento debe ser actualizado cuando se modifiquen las reglas o procesos de base de datos.*
+Repository and service DB tests run on `node:sqlite` through `test/dbPrueba.ts` (Node 22.13+) and apply every `drizzle/*.sql` file, so a broken migration fails the suite. Expo Go still needs a manual check for a fresh install and for upgrading from the previous migration.

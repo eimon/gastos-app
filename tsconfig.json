@@ -13,12 +13,14 @@
       "es2022",
       "esnext"
     ],
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "noEmit": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "target": "esnext",
-    "baseUrl": ".",
+    "types": [
+      "jest"
+    ],
     "paths": {
       "@/*": [
         "./app/*"
