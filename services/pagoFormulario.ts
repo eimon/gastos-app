@@ -14,6 +14,7 @@ export const MENSAJES_ERROR_PAGO: Record<Exclude<CodigoErrorPago, 'EXCEDE_RESTAN
   DEUDA_ELIMINADA: 'La deuda fue eliminada y ya no admite pagos.',
   MONTO_INVALIDO: 'El monto debe ser mayor a cero.',
   YA_PAGADO: 'Esta parte ya está pagada.',
+  MEDIO_PAGO_INVALIDO: 'El medio de pago debe ser efectivo o transferencia.',
   ES_USUARIO: 'La parte propia es informativa y no se paga.',
   OBJETIVO_NO_ENCONTRADO: 'No se encontró la parte a pagar.',
 };

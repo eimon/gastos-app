@@ -30,6 +30,7 @@ The database is a local SQLite file (`gastos.db`) managed with Drizzle. The sche
 - Money is `Centavos` (integer cents), never floats. Splits go through `dividirEnPartes`: the last part absorbs the remainder.
 - Calendar dates are `'YYYY-MM-DD'` text built from local date parts (`services/fechaLocal.ts`). Audit columns are ISO-UTC text. IDs are UUID text from `expo-crypto`.
 - Paid status is derived from the sum of live pagos, never stored. The user's own share is informational and cannot be paid.
+- `pagos.medio_pago` only accepts `efectivo` or `transferencia`: `pagosService` rejects anything else (`MEDIO_PAGO_INVALIDO`) and migration `0002` adds BEFORE INSERT/UPDATE triggers (SQLite cannot add a CHECK without rebuilding the table).
 - Limits live in `domain/limites.ts`: at most 30 cuotas, amount capped by `MAX_MONTO_CENTS`.
 - Anything with a live pago cannot be deleted (anular the pago first); only its description (gasto) or acreedor/description (deuda) stays editable.
 

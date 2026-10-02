@@ -18,7 +18,9 @@ export interface InputRegistrarPago {
   notas?: string | null;
 }
 
-export type CodigoErrorPago = ErrorPago | 'ES_USUARIO' | 'OBJETIVO_NO_ENCONTRADO' | 'GASTO_ELIMINADO' | 'DEUDA_ELIMINADA';
+export type CodigoErrorPago = ErrorPago | 'ES_USUARIO' | 'OBJETIVO_NO_ENCONTRADO' | 'GASTO_ELIMINADO' | 'DEUDA_ELIMINADA' | 'MEDIO_PAGO_INVALIDO';
+
+const MEDIOS_PAGO_VALIDOS: readonly string[] = ['efectivo', 'transferencia'];
 
 export class PagoRechazadoError extends Error {
   /** `restanteCents` is the fresh remaining amount seen inside the transaction, for amount errors. */
@@ -31,6 +33,12 @@ export class PagoRechazadoError extends Error {
 }
 
 function verificarYRegistrar(tx: Transaction, input: InputRegistrarPago): pagosRepo.Pago {
+  // Runtime guard: the TS union is erased and 'descuento' is not a valid medio de pago.
+  // The DB triggers are the last line of defense; this gives a coded, mappable error first.
+  if (!MEDIOS_PAGO_VALIDOS.includes(input.medioPago)) {
+    throw new PagoRechazadoError(['MEDIO_PAGO_INVALIDO']);
+  }
+
   if (input.objetivo.tipo === 'participante') {
     const { cuotaParticipanteId } = input.objetivo;
 

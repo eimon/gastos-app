@@ -201,3 +201,6 @@ react-native-config.js
 
 # EAS Build
 .eas/
+
+# Agent Teams Lite local state
+.atl/
