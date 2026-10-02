@@ -15,6 +15,13 @@
       "when": 1790576488338,
       "tag": "0001_ambitious_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790906447852,
+      "tag": "0002_pagos_medio_pago_validacion",
+      "breakpoints": true
     }
   ]
 }
