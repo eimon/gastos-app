@@ -1,16 +1,11 @@
 {
   "expo": {
     "name": "Gastos App",
-    "slug": "gastos-app",
-    "version": "1.0.0",
+    "slug": "gastosapp",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -25,12 +20,20 @@
       },
       "package": "com.gastosapp.mobile"
     },
-    "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
-    },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-status-bar",
+      "expo-sqlite"
     ],
     "scheme": "gastos-app",
     "extra": {
@@ -38,8 +41,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "0e85d0f7-38eb-4b3e-ac20-e7d8b1cdbe77"
       }
-    }
+    },
+    "owner": "eim0n"
   }
 }

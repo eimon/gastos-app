@@ -9,14 +9,18 @@
     "jsx": "react-native",
     "lib": [
       "dom",
+      "dom.iterable",
+      "es2022",
       "esnext"
     ],
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "noEmit": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "target": "esnext",
-    "baseUrl": ".",
+    "types": [
+      "jest"
+    ],
     "paths": {
       "@/*": [
         "./app/*"
@@ -29,12 +33,16 @@
       ],
       "@/assets/*": [
         "./assets/*"
+      ],
+      "@/types/*": [
+        "./types/*"
       ]
     }
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx"
+    "**/*.tsx",
+    "types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules"
